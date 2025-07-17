@@ -16,6 +16,7 @@ class FaissExtension(MLExtension):
     ):
         self.n_neighbors = n_neighbors
         self.faiss_mode = faiss_mode
+        self.index = None
         super().__init__()
 
     @staticmethod

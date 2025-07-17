@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Callable, Hashable, Literal, Sequence
 
 import pandas as pd  # type: ignore
+from numpy import ndarray
 
 from ..utils import (
     ID_SPLIT_SYMBOL,
@@ -669,8 +670,8 @@ class Dataset(DatasetBase):
         t_roles = {c: self.roles[c] for c in t_data.columns if c in self.roles.keys()}
         return Dataset(roles=t_roles, data=t_data)
 
-    def dot(self, other: Dataset) -> Dataset:
-        return Dataset(roles=other.roles, data=self.backend.dot(other.backend))
+    def dot(self, other: [Dataset, ndarray]) -> Dataset:
+        return Dataset(roles=other.roles, data=self.backend.dot(other.backend if isinstance(other, Dataset) else other))
 
     def transpose(
         self,
