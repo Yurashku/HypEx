@@ -1,9 +1,15 @@
 [tool.poetry]
 name = "HypEx"
-version = "0.0.4"
+version = "1.0.2"
 description = "Fast and customizable framework for Causal Inference"
 authors = [
     "Dmitry Tikhomirov <dimasta00@gmail.com>",
+    "Dmitry Bulychev <dmatryus.sqrt49@yandex.ru>",
+    "Ivan Yurashku <yurashku@gmail.com>",
+    "Anton Katkov <akatkov89@gmail.com>",
+    "Ruslan Alsherov <ruslan-alsherov@yandex.ru>",
+    "Ksenia Vasilieva <vasilievaxeniaa@gmail.com>",
+    "Anastasiia Fedorova <fedorovanasty24@gmail.com>"
 ]
 readme = "README.md"
 license = "Apache-2.0"
@@ -13,9 +19,11 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Natural Language :: English",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -23,50 +31,63 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-
 [tool.poetry.dependencies]
-python = ">=3.8, <3.11"
-tqdm = '*'
+python = ">=3.8, <3.13"
+tqdm = "*"
 scikit-learn = "*"
 
 pandas = [
     { version = ">=1.3.5, <=2.0.3", python = "<3.9" },
-    { version = ">=1.3.5, <=2.1.4", python = ">=3.9" }
+    { version = ">=1.3.5, <=2.2.3", python = ">=3.9" }
 ]
 
 numpy = [
     { version = ">=1.17.0, <=1.24.4", python = "<3.9" },
-    { version = ">=1.17.0, <=1.26.3", python = ">=3.9" }
+    { version = ">=1.17.0, <=1.26.4", python = ">=3.9" }
 ]
 
 scipy = [
     { version = ">=1.5.0, <=1.10.1", python = "<3.9" },
-    { version = ">=1.5.0, <=1.11.4", python = ">=3.9, <3.11" }
+    { version = ">=1.5.0, <=1.13.1", python = ">=3.9" }
 ]
 
 matplotlib = [
     { version = ">=3.0.0, <=3.7.3", python = "<3.9" },
-    { version = ">=3.0.0, <=3.8.2", python = ">=3.9, <3.11" }]
+    { version = ">=3.0.0, <=3.9.0", python = ">=3.9" }
+]
 
-faiss-cpu = ">=1.6.0, <=1.7.4"
+faiss-cpu = ">=1.6.0, <=1.8.0"
+seaborn = "<=0.13.2"
+statsmodels = "<=0.14.2"
 
-seaborn = "<=0.13.1"
+[tool.poetry.extras]
+cat = ["catboost"]
+lgbm = ["lightgbm"]
+all = ["catboost", "lightgbm"]
 
-statsmodels = "<0.14.1"
-
-
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
+docutils = ">=0.17,<0.21"
 jupyter = "^1.0.0"
-pytest = "^7.4.4"
-
+pytest = "^7.4.3"
 sphinx = { version = "^7.2.6", python = ">=3.9, <3.11" }
 nbsphinx = "*"
 nbsphinx_link = "*"
-sphinx_autodoc_typehints = "*"
+sphinx_autodoc-typehints = "*"
 sphinx_rtd_theme = "^1.2.2"
-
+ruff = "*"
+alive-progress = "^3.1.0"
+psutil = "^7.0.0"
+jsonschema = "^4.23.0"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90", "UP", "RUF", "I"]
+ignore = ["E501", "RUF003", "C901"]
