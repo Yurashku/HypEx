@@ -76,14 +76,22 @@ class MahalanobisDistance(Calculator):
         return [int, float]
 
     @classmethod
-    def _inner_function(cls, data: Dataset, test_data: Dataset | None = None, weights: dict[str, float] | None = None, **kwargs):
+    def _inner_function(
+        cls,
+        data: Dataset,
+        test_data: Dataset | None = None,
+        weights: dict[str, float] | None = None,
+        **kwargs,
+    ):
         test_data = cls._check_test_data(test_data)
         cov = (data.cov() + test_data.cov()) / 2 if test_data else data.cov()
         cholesky = CholeskyExtension().calc(cov)
         mahalanobis_transform = InverseExtension().calc(cholesky)
         if weights is not None:
             features = data.columns
-            w_list = np.array([weights[col] if col in weights.keys() else 1 for col in features])
+            w_list = np.array(
+                [weights[col] if col in weights.keys() else 1 for col in features]
+            )
             w_matrix = np.sqrt(np.diag(w_list / w_list.sum()))
             mahalanobis_transform = mahalanobis_transform.dot(w_matrix)
         y_control = data.dot(mahalanobis_transform.transpose())
@@ -111,7 +119,11 @@ class MahalanobisDistance(Calculator):
         else:
             raise NotSuitableFieldError(group_field, "Grouping")
         return cls._execute_inner_function(
-            grouping_data, target_fields=target_fields, old_data=data, weights=weights, **kwargs
+            grouping_data,
+            target_fields=target_fields,
+            old_data=data,
+            weights=weights,
+            **kwargs,
         )
 
     def execute(self, data: ExperimentData) -> ExperimentData:
@@ -138,6 +150,6 @@ class MahalanobisDistance(Calculator):
             group_field=group_field,
             target_fields=target_fields,
             grouping_data=grouping_data,
-            weights=self.weights or None,
+            # weights=self.weights or None,
         )
         return self._set_value(data, compare_result)
