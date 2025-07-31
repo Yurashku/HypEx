@@ -142,46 +142,27 @@ class FaissNearestNeighbors(MLExecutor):
             )
             if t_index_field.isna().sum() > 0:
                 raise PairsNotFoundError
-            if self.n_neighbors == 1:
-                matched_indexes = matched_indexes.append(
-                    Dataset.from_dict(
-                        data={
-                            "indexes": t_ds.iloc[
-                                list(
-                                    map(lambda x: int(x[0]), t_index_field.get_values())
+            t_index_field = t_index_field.list_to_columns("indexes")
+            # for col in t_index_field.columns:
+            matched_indexes = matched_indexes.append(
+                Dataset.from_dict(
+                    data={
+                        col: t_ds.iloc[
+                            list(
+                                map(
+                                    lambda x: int(x[0]),
+                                    t_index_field[col].get_values(),
                                 )
-                            ].index
-                        },
-                        roles={"indexes": AdditionalMatchingRole()},
-                        index=group.index,
-                    )
-                ).sort()
-            else:
-                for col in t_index_field[0].columns:
-                    print(t_index_field[0])
-                    print(t_index_field[0][0].iloc[:, col].get_values())
-                    matched_indexes = matched_indexes.append(
-                        Dataset.from_dict(
-                            data={
-                                "indexes": t_ds.iloc[
-                                    list(
-                                        map(
-                                            lambda x: int(x[0]),
-                                            t_index_field[col].get_values(),
-                                        )
-                                    )
-                                ].index
-                            },
-                            roles={"indexes": AdditionalMatchingRole()},
-                            index=group.index,
-                        )
-                    ).sort()
-            # matched_indexes = matched_indexes.append(
-            #     Dataset.from_dict(
-            #         data=data,
-            #         roles={"indexes": AdditionalMatchingRole()},
-            #         index=group.index,
-            #     )
+                            )
+                        ].index
+                        for col in t_index_field.columns
+                    },
+                    roles={
+                        col: AdditionalMatchingRole() for col in t_index_field.columns
+                    },
+                    index=group.index,
+                )
+            ).sort()
         if len(matched_indexes) < len(data.ds) and not self.two_sides:
             matched_indexes = matched_indexes.reindex(data.ds.index, fill_value=-1)
         elif len(matched_indexes) < len(data.ds) and self.two_sides:

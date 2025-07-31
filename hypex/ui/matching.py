@@ -56,18 +56,18 @@ class MatchingOutput(Output):
             indexes = [
                 Dataset.from_dict(
                     {
-                        "indexes": list(
+                        f"indexes_{group}": list(
                             map(int, values.split(MATCHING_INDEXES_SPLITTER_SYMBOL))
                         )
                     },
                     index=experiment_data.ds[
                         experiment_data.ds[group_indexes_id] == group
                     ].index,
-                    roles={"indexes": StatisticRole()},
+                    roles={f"indexes_{group}": StatisticRole()},
                 )
                 for group, values in reformatted_resume.pop("indexes").items()
             ]
-            indexes = indexes[0].append(indexes[1:]).sort()
+            indexes = indexes[0].append(other=indexes[1:], axis=1).sort()
         else:
             indexes = Dataset.from_dict(
                 {

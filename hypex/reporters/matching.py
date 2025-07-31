@@ -38,16 +38,17 @@ class MatchingDictReporter(DictReporter):
 
     @staticmethod
     def _extract_from_additional_fields(data: ExperimentData):
-        indexes_id = data.get_one_id(
+        indexes_id = data.get_ids(
             FaissNearestNeighbors, ExperimentDataEnum.additional_fields
-        )
+        )[FaissNearestNeighbors.__name__][ExperimentDataEnum.additional_fields.value]
         return {
-            "indexes": MATCHING_INDEXES_SPLITTER_SYMBOL.join(
+            f"indexes{ID_SPLIT_SYMBOL}{column.split(ID_SPLIT_SYMBOL)[2]}": MATCHING_INDEXES_SPLITTER_SYMBOL.join(
                 str(i)
-                for i in data.additional_fields[indexes_id].to_dict()["data"]["data"][
-                    indexes_id
+                for i in data.additional_fields[column].to_dict()["data"]["data"][
+                    column
                 ]
             )
+            for column in indexes_id
         }
 
     def report(self, experiment_data: ExperimentData):

@@ -190,6 +190,10 @@ class PandasNavigation(DatasetBackendNavigation):
             return int
         elif pd.api.types.is_float_dtype(dtype):
             return float
+        elif pd.api.types.is_object_dtype(dtype) and pd.api.types.is_list_like(
+            self.data[column_name].iloc[0]
+        ):
+            return object
         elif (
             pd.api.types.is_string_dtype(dtype)
             or pd.api.types.is_object_dtype(dtype)
@@ -547,3 +551,18 @@ class PandasDataset(PandasNavigation, DatasetBackendCalc):
 
     def reindex(self, labels: str = "", fill_value: str | None = None) -> pd.DataFrame:
         return self.data.reindex(labels, fill_value=fill_value)
+
+    def list_to_columns(self, column: str) -> pd.DataFrame:
+        data = self.data
+        n_cols = len(data.loc[0, column])
+        n_d = data[column].to_list()
+
+        data_expanded = (
+            pd.DataFrame(
+                data[column].to_list(), columns=[f"{column}_{i}" for i in range(n_cols)]
+            )
+            if n_cols > 1
+            else data
+        )
+
+        return data_expanded
