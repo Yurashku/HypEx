@@ -9,6 +9,7 @@ from .experiments.base import Experiment, OnRoleExperiment
 from .ui.ab import ABOutput
 from .ui.base import ExperimentShell
 from .utils import ABNTestMethodsEnum
+from .transformers import CUPEDTransformer
 
 
 class ABTest(ExperimentShell):
@@ -39,28 +40,24 @@ class ABTest(ExperimentShell):
         # A/B test with multiple statistical tests
         ab_test = ABTest(
             additional_tests=["t-test", "chi2-test"],
-            multitest_method="bonferroni"
+            multitest_method="bonferroni",
+            cuped_feature = "feature_name"
         )
         results = ab_test.execute(data)
     """
 
     @staticmethod
-    def _make_experiment(additional_tests, multitest_method):
-        """Creates an experiment configuration with specified statistical tests.
+    def _make_experiment(additional_tests, multitest_method, cuped_feature):
+        """
+        Создает эксперимент с указанными тестами и трансформерами.
 
         Args:
-            Args:
-        additional_tests (Union[str, List[str], None], optional): Statistical test(s) to run in addition to
-            the default group difference calculation. Valid options are "t-test", "u-test", and "chi2-test".
-            Can be a single test name or list of test names. Defaults to ["t-test"].
-        multitest_method (str, optional): Method to use for multiple testing correction. Valid options are:
-            "bonferroni", "sidak", "holm-sidak", "holm", "simes-hochberg", "hommel", "fdr_bh", "fdr_by",
-            "fdr_tsbh", "fdr_tsbhy", "quantile". Defaults to "holm".
-         For more information refer to the statsmodels documentation:
-         <https://www.statsmodels.org/dev/generated/statsmodels.stats.multitest.multipletests.html>
+            additional_tests (list[str]): Дополнительные тесты.
+            multitest_method (str): Метод множественной проверки.
+            cuped_feature (str | dict[str, str]): Название ковариаты для CUPED или словарь target_feature: pre_target_feature.
 
         Returns:
-            Experiment: Configured experiment object with specified tests and correction method.
+            Experiment: Настроенный эксперимент.
         """
         test_mapping = {
             "t-test": TTest(compare_by="groups", grouping_role=TreatmentRole()),
@@ -76,22 +73,29 @@ class ABTest(ExperimentShell):
         )
         for i in additional_tests:
             on_role_executors += [test_mapping[i]]
-        return Experiment(
-            executors=[
-                GroupSizes(grouping_role=TreatmentRole()),
-                OnRoleExperiment(
-                    executors=on_role_executors,
-                    role=TargetRole(),
-                ),
-                ABAnalyzer(
-                    multitest_method=(
-                        ABNTestMethodsEnum(multitest_method)
-                        if multitest_method
-                        else None
-                    )
-                ),
-            ]
-        )
+
+        transformers = []
+
+        # Добавляем CUPEDTransformer, если указан cuped_feature
+        if cuped_feature:
+            transformers.append(CUPEDTransformer(cuped_feature=cuped_feature))
+
+        executors = [
+            GroupSizes(grouping_role=TreatmentRole()),
+            OnRoleExperiment(
+                executors=on_role_executors,
+                role=TargetRole(),
+            ),
+            ABAnalyzer(
+                multitest_method=(
+                    ABNTestMethodsEnum(multitest_method)
+                    if multitest_method
+                    else None
+                )
+            ),
+        ]
+
+        return Experiment(transformer=transformers, executors=executors)
 
     def __init__(
         self,
@@ -117,9 +121,10 @@ class ABTest(ExperimentShell):
             | None
         ) = "holm",
         t_test_equal_var: bool | None = None,
+        cuped_feature: str | None = None,
     ):
         super().__init__(
-            experiment=self._make_experiment(additional_tests, multitest_method),
+            experiment=self._make_experiment(additional_tests, multitest_method, cuped_feature),
             output=ABOutput(),
         )
         if t_test_equal_var is not None:

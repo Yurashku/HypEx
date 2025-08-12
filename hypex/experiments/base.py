@@ -59,7 +59,14 @@ class Experiment(Executor):
         return data.set_value(ExperimentDataEnum.analysis_tables, self.id, value)
 
     def execute(self, data: ExperimentData) -> ExperimentData:
-        experiment_data = deepcopy(data) if self.transformer else data
+        if self.transformer:
+            experiment_data = deepcopy(data)
+            for transformer in self.transformer:
+                experiment_data = transformer.execute(experiment_data)
+        else:
+            experiment_data = data
+
+        
         for executor in self.executors:
             executor.key = self.key
             experiment_data = executor.execute(experiment_data)
