@@ -10,6 +10,7 @@ from .ui.ab import ABOutput
 from .ui.base import ExperimentShell
 from .utils import ABNTestMethodsEnum
 from .transformers import CUPEDTransformer
+from .ml.cupac import CUPACML
 
 
 class ABTest(ExperimentShell):
@@ -47,17 +48,20 @@ class ABTest(ExperimentShell):
     """
 
     @staticmethod
-    def _make_experiment(additional_tests, multitest_method, cuped_feature):
+    def _make_experiment(additional_tests, multitest_method, cuped_features=None, cupac_params=None):
         """
-        Создает эксперимент с указанными тестами и трансформерами.
+        Create experiment with specified tests and transformers.
 
         Args:
-            additional_tests (list[str]): Дополнительные тесты.
-            multitest_method (str): Метод множественной проверки.
-            cuped_feature (str | dict[str, str]): Название ковариаты для CUPED или словарь target_feature: pre_target_feature.
+            additional_tests (list[str]): Additional statistical tests.
+            multitest_method (str): Multiple testing correction method.
+            cuped_features (dict[str, str] | None): Dictionary {target_feature: pre_target_feature} for CUPED. Only dict is allowed.
+            cupac_params (dict | None): Parameters for CUPACML, e.g. {"target_col": ..., "covariates": [...], ...}.
 
         Returns:
-            Experiment: Настроенный эксперимент.
+            Experiment: Configured experiment.
+        Raises:
+            ValueError: If both CUPED and CUPACML are specified.
         """
         test_mapping = {
             "t-test": TTest(compare_by="groups", grouping_role=TreatmentRole()),
@@ -74,11 +78,15 @@ class ABTest(ExperimentShell):
         for i in additional_tests:
             on_role_executors += [test_mapping[i]]
 
-        transformers = []
 
-        # Добавляем CUPEDTransformer, если указан cuped_feature
-        if cuped_feature:
-            transformers.append(CUPEDTransformer(cuped_feature=cuped_feature))
+
+        if cuped_features and cupac_params:
+            raise ValueError("You can use only one transformer: either CUPED or CUPACML, not both.")
+        transformers = []
+        if cuped_features:
+            transformers.append(CUPEDTransformer(cuped_features=cuped_features))
+        elif cupac_params:
+            transformers.append(CUPACML(cupac_features=cupac_params))
 
         executors = [
             GroupSizes(grouping_role=TreatmentRole()),
@@ -121,10 +129,21 @@ class ABTest(ExperimentShell):
             | None
         ) = "holm",
         t_test_equal_var: bool | None = None,
-        cuped_feature: str | None = None,
+        cuped_features: dict[str, str] | None = None,
+        cupac_params: dict | None = None,
     ):
+        """
+        Args:
+            additional_tests: Statistical test(s) to run in addition to the default group difference calculation. Valid options are "t-test", "u-test", and "chi2-test". Can be a single test name or list of test names. Defaults to ["t-test"].
+            multitest_method: Method to use for multiple testing correction. Valid options are: "bonferroni", "sidak", "holm-sidak", "holm", "simes-hochberg", "hommel", "fdr_bh", "fdr_by", "fdr_tsbh", "fdr_tsbhy", "quantile". Defaults to "holm".
+            t_test_equal_var: Whether to use equal variance in t-test (optional).
+            cuped_features: dict[str, str] — Dictionary {target_feature: pre_target_feature} for CUPED. Only dict is allowed.
+            cupac_params: dict — Parameters for CUPACML, e.g. {"target_col": "target", "covariates": ["cov1", "cov2"], ...}.
+        Raises:
+            ValueError: If both cuped_features and cupac_params are specified.
+        """
         super().__init__(
-            experiment=self._make_experiment(additional_tests, multitest_method, cuped_feature),
+            experiment=self._make_experiment(additional_tests, multitest_method, cuped_features, cupac_params),
             output=ABOutput(),
         )
         if t_test_equal_var is not None:
