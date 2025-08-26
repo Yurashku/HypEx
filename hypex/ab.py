@@ -10,7 +10,6 @@ from .ui.ab import ABOutput
 from .ui.base import ExperimentShell
 from .utils import ABNTestMethodsEnum
 from .transformers import CUPEDTransformer
-from .ml.cupac import CUPACML
 
 
 class ABTest(ExperimentShell):
@@ -49,20 +48,6 @@ class ABTest(ExperimentShell):
 
     @staticmethod
     def _make_experiment(additional_tests, multitest_method, cuped_features=None, cupac_params=None):
-        """
-        Create experiment with specified tests and transformers.
-
-        Args:
-            additional_tests (list[str]): Additional statistical tests.
-            multitest_method (str): Multiple testing correction method.
-            cuped_features (dict[str, str] | None): Dictionary {target_feature: pre_target_feature} for CUPED. Only dict is allowed.
-            cupac_params (dict | None): Parameters for CUPACML, e.g. {"target_col": ..., "covariates": [...], ...}.
-
-        Returns:
-            Experiment: Configured experiment.
-        Raises:
-            ValueError: If both CUPED and CUPACML are specified.
-        """
         test_mapping = {
             "t-test": TTest(compare_by="groups", grouping_role=TreatmentRole()),
             "u-test": UTest(compare_by="groups", grouping_role=TreatmentRole()),
@@ -81,12 +66,13 @@ class ABTest(ExperimentShell):
 
 
         if cuped_features and cupac_params:
-            raise ValueError("You can use only one transformer: either CUPED or CUPACML, not both.")
+            raise ValueError("You can use only one transformer: either CUPED or CUPACExecutor, not both.")
         transformers = []
         if cuped_features:
             transformers.append(CUPEDTransformer(cuped_features=cuped_features))
         elif cupac_params:
-            transformers.append(CUPACML(cupac_features=cupac_params))
+            from .ml import CUPACExecutor
+            transformers.append(CUPACExecutor(cupac_features=cupac_params))
 
         executors = [
             GroupSizes(grouping_role=TreatmentRole()),
@@ -138,7 +124,14 @@ class ABTest(ExperimentShell):
             multitest_method: Method to use for multiple testing correction. Valid options are: "bonferroni", "sidak", "holm-sidak", "holm", "simes-hochberg", "hommel", "fdr_bh", "fdr_by", "fdr_tsbh", "fdr_tsbhy", "quantile". Defaults to "holm".
             t_test_equal_var: Whether to use equal variance in t-test (optional).
             cuped_features: dict[str, str] — Dictionary {target_feature: pre_target_feature} for CUPED. Only dict is allowed.
-            cupac_params: dict — Parameters for CUPACML, e.g. {"target_col": "target", "covariates": ["cov1", "cov2"], ...}.
+            cupac_params: dict — Parameters for CUPACML, e.g. {"target1": ["cov1", "cov2"], ...}.
+                    You can also specify a model for adjustment:
+                    Supported models for 'model' parameter:
+                        'linear'   - LinearRegression (sklearn)
+                        'ridge'    - Ridge regression
+                        'lasso'    - Lasso regression
+                        'catboost' - CatBoostRegressor (if installed)
+                    If 'model' is None or not specified, CUPAC will try all and select the best by variance reduction.
         Raises:
             ValueError: If both cuped_features and cupac_params are specified.
         """
