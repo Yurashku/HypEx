@@ -1,6 +1,3 @@
-
-
-
 from typing import Any, Dict, Optional
 import numpy as np
 from ..dataset.dataset import Dataset, ExperimentData
@@ -10,6 +7,27 @@ from ..utils import ExperimentDataEnum
 
 
 class CUPACExecutor(MLExecutor):
+    def __init__(
+        self,
+        cupac_features: Dict[str, list],
+        key: Any = "",
+        models: Optional[Dict[str, Any]] = None,
+        n_folds: int = 5,
+        random_state: Optional[int] = None,
+    ):
+        super().__init__(target_role=TargetRole(), key=key)
+        self.cupac_features = cupac_features
+        self.models = models
+        self.n_folds = n_folds
+        self.random_state = random_state
+        self.best_model = None
+        self.best_model_name = None
+        self.best_score = None
+        self.variance_reduction = None
+        self.feature_importances_ = None
+        self.is_fitted = False
+        self.model_results_ = {}
+
     @classmethod
     def _inner_function(
         cls,
@@ -28,22 +46,6 @@ class CUPACExecutor(MLExecutor):
         )
         instance.fit(data)
         return instance.predict(data)
-    def __init__(
-        self,
-        cupac_features: Dict[str, list],
-        key: Any = "",
-        models: Optional[Dict[str, Any]] = None,
-        n_folds: int = 5,
-        random_state: Optional[int] = None,
-    ):
-        super().__init__(target_role=TargetRole(), key=key)
-        self.cupac_features = cupac_features
-        self.models = models
-        self.n_folds = n_folds
-        self.random_state = random_state
-        self.fitted_models = {}
-        self.best_model_names = {}
-        self.is_fitted = False
 
     def fit(self, X: Dataset) -> "CUPACExecutor":
         import pandas as pd
@@ -133,26 +135,6 @@ class CUPACExecutor(MLExecutor):
             y_adj = y - pred + np.mean(y)
             result[f"{target_col}_cupac"] = y_adj
         return result
-    def __init__(
-        self,
-        cupac_features: Dict[str, list],
-        key: Any = "",
-        models: Optional[Dict[str, Any]] = None,
-        n_folds: int = 5,
-        random_state: Optional[int] = None,
-    ):
-        super().__init__(target_role=TargetRole(), key=key)
-        self.cupac_features = cupac_features
-        self.models = models
-        self.n_folds = n_folds
-        self.random_state = random_state
-        self.best_model = None
-        self.best_model_name = None
-        self.best_score = None
-        self.variance_reduction = None
-        self.feature_importances_ = None
-        self.is_fitted = False
-        self.model_results_ = {}
 
     @staticmethod
     def _calculate_variance_reduction(y, pred):

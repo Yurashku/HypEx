@@ -66,7 +66,6 @@ class Experiment(Executor):
         else:
             experiment_data = data
 
-        
         for executor in self.executors:
             executor.key = self.key
             experiment_data = executor.execute(experiment_data)
