@@ -206,13 +206,15 @@ class MLExecutor(Calculator, ABC):
     def _set_value(
         self, data: ExperimentData, value: Any, key: Any = None
     ) -> ExperimentData:
-        return data.set_value(
-            ExperimentDataEnum.additional_fields,
-            self.id,
-            value=value,
-            key=key,
-            role=AdditionalMatchingRole(),
-        )
+        for i in range(value.shape[1]):
+            data.set_value(
+                ExperimentDataEnum.additional_fields,
+                f"{self.id}{i}{ID_SPLIT_SYMBOL}",
+                value=value.iloc[:, i],
+                key=key,
+                role=AdditionalMatchingRole(),
+            )
+        return data
 
     @classmethod
     def calc(

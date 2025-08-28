@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Callable, Hashable, Literal, Sequence
 
 import pandas as pd  # type: ignore
+from numpy import ndarray
 
 from ..utils import (
     ID_SPLIT_SYMBOL,
@@ -669,8 +670,13 @@ class Dataset(DatasetBase):
         t_roles = {c: self.roles[c] for c in t_data.columns if c in self.roles.keys()}
         return Dataset(roles=t_roles, data=t_data)
 
-    def dot(self, other: Dataset) -> Dataset:
-        return Dataset(roles=other.roles, data=self.backend.dot(other.backend))
+    def dot(self, other: [Dataset, ndarray]) -> Dataset:
+        return Dataset(
+            roles=other.roles,
+            data=self.backend.dot(
+                other.backend if isinstance(other, Dataset) else other
+            ),
+        )
 
     def transpose(
         self,
@@ -722,6 +728,16 @@ class Dataset(DatasetBase):
             self.roles,
             data=self._backend.replace(to_replace=to_replace, value=value, regex=regex),
         )
+
+    def list_to_columns(self, column: str) -> Dataset:
+        if not pd.api.types.is_list_like(self.backend[column][0]):
+            return self
+        extended_data = self.backend.list_to_columns(column)
+        extended_roles = {
+            c: deepcopy(self.roles[column]) for c in extended_data.columns
+        }
+        extended_ds = Dataset(roles=extended_roles, data=extended_data)
+        return self.append(extended_ds, axis=1).drop(column, axis=1)
 
 
 class ExperimentData:

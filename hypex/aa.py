@@ -103,18 +103,29 @@ class AATest(ExperimentShell):
             test that assumes equal population variances. If False, perform Welch's t-test,
             which does not assume equal population variance.
 
-    Examples:
-        Basic A/A test with default parameters:
-        >>> aa_test = AATest()
-        >>> results = aa_test.execute(data)
 
-        High precision A/A test with stratification:
-        >>> aa_test = AATest(precision_mode=True,control_size=0.5,stratification=True)
-        >>> results = aa_test.execute(data)
+    Examples
+    --------
+    .. code-block:: python
 
-        A/A test with custom sample size and iterations:
-        >>> aa_test = AATest(n_iterations=100,sample_size=0.8)
-        >>> results = aa_test.execute(data)
+        # Basic A/A test with default parameters
+        aa_test = AATest()
+        results = aa_test.execute(data)
+
+        # High precision A/A test with stratification
+        aa_test = AATest(
+            precision_mode=True,
+            stratification=True,
+            control_size=0.5
+        )
+        results = aa_test.execute(data)
+
+        # A/A test with custom sample size and iterations
+        aa_test = AATest(
+            sample_size=0.8,
+            n_iterations=100
+        )
+        results = aa_test.execute(data)
     """
 
     @staticmethod
@@ -147,10 +158,17 @@ class AATest(ExperimentShell):
             Dict[type, Dict[str, Any]]: Dictionary mapping executor classes to their
                 parameter configurations.
 
-        Examples:
-            >>> params = AATest._prepare_params(n_iterations=10,control_size=0.5,sample_size=0.8)
-            >>> print(params[AASplitter]["control_size"])
-            [0.5]
+        Examples
+        --------
+        .. code-block:: python
+
+            params = AATest._prepare_params(
+                n_iterations=10,
+                control_size=0.5,
+                sample_size=0.8
+            )
+            print(params[AASplitter]["control_size"])
+            # [0.5]
         """
         random_states = random_states or range(n_iterations)
         additional_params = additional_params or {}
@@ -192,7 +210,14 @@ class AATest(ExperimentShell):
                 executors=(
                     [ONE_AA_TEST_WITH_STRATIFICATION if stratification else ONE_AA_TEST]
                 ),
-                params=self._prepare_params(n_iterations, control_size, random_states, sample_size, additional_params, groups_sizes),
+                params=self._prepare_params(
+                    n_iterations,
+                    control_size,
+                    random_states,
+                    sample_size,
+                    additional_params,
+                    groups_sizes,
+                ),
                 reporter=DatasetReporter(OneAADictReporter(front=False)),
             )
         ]
@@ -208,8 +233,13 @@ class AATest(ExperimentShell):
                             )
                         ]
                     ),
-                    params=self._prepare_params(n_iterations, control_size, random_states, additional_params,
-                                                groups_sizes),
+                    params=self._prepare_params(
+                        n_iterations,
+                        control_size,
+                        random_states,
+                        additional_params,
+                        groups_sizes,
+                    ),
                     reporter=DatasetReporter(OneAADictReporter(front=False)),
                     stopping_criterion=IfAAExecutor(sample_size=sample_size),
                 )
