@@ -143,7 +143,6 @@ class FaissNearestNeighbors(MLExecutor):
             if t_index_field.isna().sum() > 0:
                 raise PairsNotFoundError
             t_index_field = t_index_field.list_to_columns("indexes")
-            # for col in t_index_field.columns:
             matched_indexes = matched_indexes.append(
                 Dataset.from_dict(
                     data={
