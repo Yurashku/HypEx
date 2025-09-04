@@ -54,16 +54,31 @@ class MatchingOutput(Output):
                     matched_data.reindex(experiment_data.ds.index), axis=1
                 )
 
+    def _reformat_resume(self, resume: dict[str, Any]):
+        reformatted_resume: dict[str, Any] = {}
+
+        for key, value in resume.items():
+            if ID_SPLIT_SYMBOL not in key:
+                continue
+
+            keys = key.split(ID_SPLIT_SYMBOL)
+
+            if keys[0] == "indexes":
+                if len(keys) > 2:
+                    reformatted_resume.setdefault("indexes", {}).setdefault(
+                        keys[1], {}
+                    )[keys[2]] = value
+                else:
+                    reformatted_resume.setdefault("indexes", {})[keys[1]] = value
+            else:
+                l1_key = keys[0] if len(keys) < 3 else f"{keys[2]} {keys[0]}"
+                reformatted_resume.setdefault(l1_key, {})[keys[1]] = value
+
+        return reformatted_resume
+
     def extract(self, experiment_data: ExperimentData):
         resume = self.resume_reporter.report(experiment_data)
-        reformatted_resume: dict[str, Any] = {}
-        for key, value in resume.items():
-            if ID_SPLIT_SYMBOL in key:
-                keys = key.split(ID_SPLIT_SYMBOL)
-                temp_key = keys[0] if len(keys) < 3 else f"{keys[2]} {keys[0]}"
-                if temp_key not in reformatted_resume:
-                    reformatted_resume[temp_key] = {}
-                reformatted_resume[temp_key].update({keys[1]: value})
+        reformatted_resume = self._reformat_resume(resume)
         if "indexes" in reformatted_resume.keys():
             group_indexes_id = experiment_data.ds.search_columns(GroupingRole())
             indexes = [

@@ -42,7 +42,7 @@ class MatchingDictReporter(DictReporter):
             FaissNearestNeighbors, ExperimentDataEnum.additional_fields
         )[FaissNearestNeighbors.__name__][ExperimentDataEnum.additional_fields.value]
         return {
-            f"indexes{ID_SPLIT_SYMBOL}{column.split(ID_SPLIT_SYMBOL)[2]}": MATCHING_INDEXES_SPLITTER_SYMBOL.join(
+            f"indexes{ID_SPLIT_SYMBOL}{column.split(ID_SPLIT_SYMBOL)[3]}": MATCHING_INDEXES_SPLITTER_SYMBOL.join(
                 str(i)
                 for i in data.additional_fields[column].to_dict()["data"]["data"][
                     column
