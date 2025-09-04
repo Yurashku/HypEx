@@ -183,22 +183,16 @@ digraph HypExInheritance {
             style="filled,rounded"
             bgcolor="#e8f8e8"
             
-            Splitter [
-                fillcolor=lightyellow
-                label="{ «abstract» Splitter |
+            // Note: No abstract Splitter class in actual code
+            AASplitter [
+                fillcolor=lightgreen
+                label="{ AASplitter |
                     + control_size: float\l
                     + random_state: int\l
                     + sample_size: float\l
                     + constant_key: bool\l
                     + save_groups: bool\l |
                     + init_from_hash(hash): void\l
-                    Splits data into groups\l
-                }"
-            ]
-            
-            AASplitter [
-                fillcolor=lightgreen
-                label="{ AASplitter | |
                     A/A test splitter\l
                     Uses AdditionalTreatmentRole\l
                 }"
@@ -239,7 +233,7 @@ digraph HypExInheritance {
                 fillcolor=lightgreen
                 label="{ NaFiller |
                     + method: str\l
-                    + value: Any\l |
+                    + values: Any\l |
                     Fills missing values\l
                 }"
             ]
@@ -265,7 +259,8 @@ digraph HypExInheritance {
             CorrFilter [
                 fillcolor=lightgreen
                 label="{ CorrFilter |
-                    + threshold: float\l |
+                    + threshold: float\l
+                    + method: str\l |
                     Filters correlated columns\l
                 }"
             ]
@@ -290,8 +285,8 @@ digraph HypExInheritance {
             OutliersFilter [
                 fillcolor=lightgreen
                 label="{ OutliersFilter |
-                    + method: str\l
-                    + threshold: float\l |
+                    + lower_percentile: float\l
+                    + upper_percentile: float\l |
                     Filters outliers\l
                 }"
             ]
@@ -339,6 +334,7 @@ digraph HypExInheritance {
                 fillcolor=lightgreen
                 label="{ Bias | |
                     + calc_coefficients(X, Y): list\l
+                    + calc_bias(X, X_matched, coef): list\l
                     Bias estimation\l
                 }"
             ]
@@ -346,7 +342,8 @@ digraph HypExInheritance {
             MatchingMetrics [
                 fillcolor=lightgreen
                 label="{ MatchingMetrics |
-                    + metric: str\l |
+                    + metric: str (atc/att/ate)\l |
+                    Calculates treatment effects:\l
                     ATT, ATC, ATE metrics\l
                 }"
             ]
@@ -358,18 +355,13 @@ digraph HypExInheritance {
             style="filled,rounded"
             bgcolor="#f0e8f8"
             
-            Analyzer [
-                fillcolor=lightyellow
-                label="{ «abstract» Analyzer | |
-                    Analyzes experiment results\l
-                }"
-            ]
-            
+            // Note: Analyzers inherit directly from Executor
             OneAAStatAnalyzer [
                 fillcolor=lightgreen
                 label="{ OneAAStatAnalyzer | |
                     Analyzes single\l
                     A/A test statistics\l
+                    Inherits from Executor\l
                 }"
             ]
             
@@ -380,19 +372,21 @@ digraph HypExInheritance {
                     + alpha: float\l |
                     Scores A/A tests\l
                     Finds best split\l
+                    Inherits from Executor\l
                 }"
             ]
             
             ABAnalyzer [
                 fillcolor=lightgreen
                 label="{ ABAnalyzer |
-                    + multitest_method: str\l
+                    + multitest_method: ABNTestMethodsEnum\l
                     + alpha: float\l
                     + equal_variance: bool\l
                     + quantiles: float\l
                     + iteration_size: int\l |
                     A/B test analyzer\l
                     Multiple testing correction\l
+                    Inherits from Executor\l
                 }"
             ]
             
@@ -401,6 +395,7 @@ digraph HypExInheritance {
                 label="{ MatchingAnalyzer | |
                     Analyzes matching\l
                     quality and metrics\l
+                    Inherits from Executor\l
                 }"
             ]
         }
@@ -435,6 +430,7 @@ digraph HypExInheritance {
             fillcolor=lightblue
             label="{ Experiment |
                 + executors: list[Executor]\l
+                + transformer: bool\l
                 + key: str\l |
                 + execute(data): ExperimentData\l
                 + set_params(params): void\l
@@ -445,7 +441,7 @@ digraph HypExInheritance {
         OnRoleExperiment [
             fillcolor=lightgreen
             label="{ OnRoleExperiment |
-                + role: ABCRole\l |
+                + role: list[ABCRole]\l |
                 Executes on specific role\l
             }"
         ]
@@ -478,7 +474,8 @@ digraph HypExInheritance {
         ParamsExperiment [
             fillcolor=lightgreen
             label="{ ParamsExperiment |
-                + params: dict\l |
+                + params: dict\l
+                + flat_params: list\l |
                 Parameterized runs\l
             }"
         ]
@@ -486,8 +483,9 @@ digraph HypExInheritance {
         IfParamsExperiment [
             fillcolor=lightgreen
             label="{ IfParamsExperiment |
-                + stopping_criterion: Executor\l |
+                + stopping_criterion: IfExecutor\l |
                 Conditional params\l
+                with early stopping\l
             }"
         ]
     }
@@ -543,6 +541,13 @@ digraph HypExInheritance {
             }"
         ]
         
+        AADatasetReporter [
+            fillcolor=lightgreen
+            label="{ AADatasetReporter | |
+                A/A results as Dataset\l
+            }"
+        ]
+        
         ABDictReporter [
             fillcolor=lightgreen
             label="{ ABDictReporter | |
@@ -575,6 +580,7 @@ digraph HypExInheritance {
             fillcolor=lightgreen
             label="{ AAPassedReporter | |
                 Reports passed A/A tests\l
+                Detects which tests passed\l
             }"
         ]
         
@@ -582,6 +588,7 @@ digraph HypExInheritance {
             fillcolor=lightgreen
             label="{ AABestSplitReporter | |
                 Reports best split\l
+                Adds split column to data\l
             }"
         ]
         
@@ -643,9 +650,20 @@ digraph HypExInheritance {
             }"
         ]
         
+        ABOutput [
+            fillcolor=lightpink
+            label="{ ABOutput |
+                + multitest: Dataset | str\l
+                + sizes: Dataset\l |
+                A/B test output with\l
+                multiple testing correction\l
+            }"
+        ]
+        
         HomoOutput [
             fillcolor=lightpink
-            label="{ HomoOutput | |
+            label="{ HomoOutput |
+                + resume: Dataset\l |
                 Homogeneity test output\l
             }"
         ]
@@ -653,8 +671,9 @@ digraph HypExInheritance {
         MatchingOutput [
             fillcolor=lightpink
             label="{ MatchingOutput |
-                + matching_results: Dataset\l
-                + quality_metrics: Dataset\l |
+                + full_data: Dataset\l
+                + quality_results: Dataset\l
+                + indexes: Dataset\l |
                 Matching analysis output\l
             }"
         ]
@@ -664,24 +683,50 @@ digraph HypExInheritance {
             label="{ ExperimentShell |
                 + experiment: Experiment\l
                 + output: Output\l |
+                + execute(data): Output\l
                 UI wrapper for experiments\l
             }"
         ]
         
         AATest [
             fillcolor=lightpink
-            label="{ AATest | |
+            label="{ AATest |
+                + precision_mode: bool\l
+                + control_size: float\l
+                + stratification: bool\l
+                + n_iterations: int\l
+                + sample_size: float\l |
                 A/A test shell\l
                 with configuration\l
+            }"
+        ]
+        
+        ABTest [
+            fillcolor=lightpink
+            label="{ ABTest |
+                + additional_tests: list[str]\l
+                + multitest_method: str\l |
+                A/B test shell with\l
+                configurable tests\l
+            }"
+        ]
+        
+        HomogeneityTest [
+            fillcolor=lightpink
+            label="{ HomogeneityTest | |
+                Homogeneity test shell\l
+                Uses predefined experiment\l
             }"
         ]
         
         Matching [
             fillcolor=lightpink
             label="{ Matching |
+                + group_match: bool\l
                 + distance: str\l
                 + metric: str\l
-                + bias_estimation: bool\l |
+                + bias_estimation: bool\l
+                + quality_tests: list\l |
                 Matching analysis shell\l
             }"
         ]
@@ -691,10 +736,13 @@ digraph HypExInheritance {
     // Solid arrows for inheritance
     Executor -> Calculator [arrowhead=empty]
     Executor -> IfExecutor [arrowhead=empty]
-    Executor -> Analyzer [arrowhead=empty]
+    Executor -> OneAAStatAnalyzer [arrowhead=empty]
+    Executor -> AAScoreAnalyzer [arrowhead=empty]
+    Executor -> ABAnalyzer [arrowhead=empty]
+    Executor -> MatchingAnalyzer [arrowhead=empty]
     
     Calculator -> Comparator [arrowhead=empty]
-    Calculator -> Splitter [arrowhead=empty]
+    Calculator -> AASplitter [arrowhead=empty]
     Calculator -> Transformer [arrowhead=empty]
     Calculator -> Encoder [arrowhead=empty]
     Calculator -> GroupOperator [arrowhead=empty]
@@ -714,7 +762,6 @@ digraph HypExInheritance {
     StatHypothesisTesting -> UTest [arrowhead=empty]
     StatHypothesisTesting -> Chi2Test [arrowhead=empty]
     
-    Splitter -> AASplitter [arrowhead=empty]
     AASplitter -> AASplitterWithStratification [arrowhead=empty]
     
     Transformer -> Shuffle [arrowhead=empty]
@@ -735,11 +782,6 @@ digraph HypExInheritance {
     IfExecutor -> IfAAExecutor [arrowhead=empty]
     
     MLExecutor -> FaissNearestNeighbors [arrowhead=empty]
-    
-    Analyzer -> OneAAStatAnalyzer [arrowhead=empty]
-    Analyzer -> AAScoreAnalyzer [arrowhead=empty]
-    Analyzer -> ABAnalyzer [arrowhead=empty]
-    Analyzer -> MatchingAnalyzer [arrowhead=empty]
     
     Experiment -> OnRoleExperiment [arrowhead=empty]
     Experiment -> ExperimentWithReporter [arrowhead=empty]
@@ -763,6 +805,7 @@ digraph HypExInheritance {
     TestDictReporter -> MatchingQualityDictReporter [arrowhead=empty]
     
     OneAADictReporter -> ABDictReporter [arrowhead=empty]
+    OneAADictReporter -> AADatasetReporter [arrowhead=empty]
     OneAADictReporter -> HomoDictReporter [arrowhead=empty]
     
     ABDictReporter -> ABDatasetReporter [arrowhead=empty]
@@ -772,10 +815,13 @@ digraph HypExInheritance {
     DatasetReporter -> MatchingDatasetReporter [arrowhead=empty]
     
     Output -> AAOutput [arrowhead=empty]
+    Output -> ABOutput [arrowhead=empty]
     Output -> HomoOutput [arrowhead=empty]
     Output -> MatchingOutput [arrowhead=empty]
     
     ExperimentShell -> AATest [arrowhead=empty]
+    ExperimentShell -> ABTest [arrowhead=empty]
+    ExperimentShell -> HomogeneityTest [arrowhead=empty]
     ExperimentShell -> Matching [arrowhead=empty]
     
     // ========== COMPOSITION/USAGE RELATIONSHIPS ==========
@@ -788,10 +834,21 @@ digraph HypExInheritance {
     ExperimentShell -> Experiment [style=dashed, label="wraps", arrowhead=open]
     ExperimentShell -> Output [style=dashed, label="has", arrowhead=open]
     IfExecutor -> Executor [style=dashed, label="contains 2", arrowhead=open]
-    IfParamsExperiment -> Executor [style=dashed, label="has stopping\ncriterion", arrowhead=open]
+    IfParamsExperiment -> IfExecutor [style=dashed, label="has stopping\ncriterion", arrowhead=open]
     MatchingDatasetReporter -> MatchingDictReporter [style=dashed, label="uses", arrowhead=open]
     FaissNearestNeighbors -> MahalanobisDistance [style=dashed, label="may use", arrowhead=open]
-    AAScoreAnalyzer -> AASplitter [style=dashed, label="rebuilds", arrowhead=open]
+    AAScoreAnalyzer -> AASplitter [style=dashed, label="rebuilds from id", arrowhead=open]
+    
+    // Main user classes usage
+    ABTest -> ABAnalyzer [style=dashed, label="uses", arrowhead=open]
+    ABTest -> OnRoleExperiment [style=dashed, label="creates", arrowhead=open]
+    HomogeneityTest -> OneAAStatAnalyzer [style=dashed, label="uses", arrowhead=open]
+    AATest -> ParamsExperiment [style=dashed, label="creates", arrowhead=open]
+    AATest -> IfParamsExperiment [style=dashed, label="may create", arrowhead=open]
+    AATest -> AAScoreAnalyzer [style=dashed, label="uses", arrowhead=open]
+    Matching -> FaissNearestNeighbors [style=dashed, label="uses", arrowhead=open]
+    Matching -> MatchingMetrics [style=dashed, label="uses", arrowhead=open]
+    Matching -> MatchingAnalyzer [style=dashed, label="uses", arrowhead=open]
     
     // Legend
     subgraph cluster_legend {
