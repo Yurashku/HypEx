@@ -30,24 +30,21 @@ class CUPEDTransformer(Transformer):
         # Work on a deepcopy so original Dataset isn't mutated by the transformer.
         result_ds = deepcopy(data)
         for target_feature, pre_target_feature in cuped_features.items():
-            # Используем Series для вычислений
-            target_series = result_ds.data[target_feature]
-            covariate_series = result_ds.data[pre_target_feature]
-            cov_xy = result_ds.data[[target_feature, pre_target_feature]].cov().loc[target_feature, pre_target_feature]
-            std_y = target_series.std()
-            std_x = covariate_series.std()
+            # Все вычисления через Dataset
+            cov_xy = result_ds.get_matrix_value('cov', target_feature, pre_target_feature)
+            std_y = result_ds[target_feature].std()
+            std_x = result_ds[pre_target_feature].std()
             theta = cov_xy / (std_y * std_x)
-            result_ds[target_feature] = target_series - theta * (covariate_series - covariate_series.mean())
+            # mean для pre_target_feature
+            pre_target_mean = result_ds[pre_target_feature].mean()
+            # CUPED корректировка: все операции между Dataset
+            new_values_ds = result_ds[target_feature] - theta * (result_ds[pre_target_feature] - pre_target_mean)
+            # Присваиваем скорректированные значения
+            result_ds[target_feature] = new_values_ds
             result_ds = result_ds.astype({target_feature: result_ds.roles[target_feature].data_type or float})
         return result_ds
 
     def execute(self, data: ExperimentData) -> ExperimentData:
-        """Execute transformer using the instance's configured cuped_features.
-
-        The base Transformer.execute calls calc without kwargs which fails for
-        CUPEDTransformer because the inner function needs the mapping of features.
-        We therefore override execute to provide the configured cuped_features.
-        """
         result = data.copy(
             data=self.calc(data=data.ds, cuped_features=self.cuped_features)
         )

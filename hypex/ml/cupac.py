@@ -6,7 +6,8 @@ from ..executor import MLExecutor
 from ..utils import ExperimentDataEnum
 
 
-from ..utils.models import CUPAC_MODELS
+
+from ..extensions.cupac import CupacExtension
 
 from typing import Union, Sequence
 from ..utils.models import CUPAC_MODELS
@@ -81,76 +82,20 @@ class CUPACExecutor(MLExecutor):
         return list(all_models.keys())
 
     def fit(self, X: Dataset) -> "CUPACExecutor":
-        from sklearn.base import clone
-        from sklearn.model_selection import KFold
-        all_models = {k.lower(): v for k, v in CUPAC_MODELS.items()}
-
-        df = X.data.copy()
-        self.fitted_models = {}
-        self.best_model_names = {}
-
-        explicit_models = self._select_explicit_models(all_models)
-
-        for target_feature, pre_target_features in self.cupac_features.items():
-            if target_feature == "model":
-                continue
-
-            X_cov = df[pre_target_features]
-            y = df[target_feature]
-            kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=self.random_state)
-
-            # If only one model is specified, use it
-            if len(explicit_models) == 1:
-                model_proto = all_models[explicit_models[0]]
-                model = clone(model_proto)
-                model.fit(X_cov, y)
-                self.fitted_models[target_feature] = model
-                self.best_model_names[target_feature] = explicit_models[0]
-                continue
-
-            # If a list of models is specified, try only those
-            best_score = -np.inf
-            best_model = None
-            best_model_name = None
-            for name in explicit_models:
-                model_proto = all_models[name]
-                fold_var_reductions: list[float] = []
-                for train_idx, val_idx in kf.split(X_cov):
-                    X_train, X_val = X_cov.iloc[train_idx], X_cov.iloc[val_idx]
-                    y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-                    m = clone(model_proto)
-                    m.fit(X_train, y_train)
-                    pred = m.predict(X_val)
-                    fold_var_reductions.append(self._calculate_variance_reduction(y_val.to_numpy(), pred))
-                score = float(np.nanmean(fold_var_reductions))
-                if score > best_score:
-                    best_score = score
-                    best_model = clone(model_proto)
-                    best_model_name = name
-            if best_model is None:
-                raise RuntimeError("No model was selected during model search")
-            best_model.fit(X_cov, y)
-            self.fitted_models[target_feature] = best_model
-            self.best_model_names[target_feature] = best_model_name
-
+        self.extension = CupacExtension(
+            cupac_features=self.cupac_features,
+            cupac_model=self.cupac_model,
+            n_folds=self.n_folds,
+            random_state=self.random_state,
+        )
+        self.extension.fit(X)
         self.is_fitted = True
         return self
 
     def predict(self, X: Dataset) -> dict[str, np.ndarray]:
-        df = X.data.copy()
-        result = {}
-        for target_feature, pre_target_features in self.cupac_features.items():
-            if target_feature == "model":
-                continue
-            model = self.fitted_models.get(target_feature)
-            if model is None:
-                raise RuntimeError(f"Model for {target_feature} not fitted. Call fit() first.")
-            X_cov = df[pre_target_features]
-            y = df[target_feature]
-            pred = model.predict(X_cov)
-            y_adj = y - pred + np.mean(y)
-            result[f"{target_feature}_cupac"] = y_adj
-        return result
+        if not hasattr(self, "extension"):
+            raise RuntimeError("CUPACExecutor not fitted. Call fit() first.")
+        return self.extension.predict(X)
 
     @staticmethod
     def _calculate_variance_reduction(y: np.ndarray, pred: np.ndarray) -> float:
@@ -185,6 +130,5 @@ class CUPACExecutor(MLExecutor):
                 value=ds_ml,
                 role=TargetRole(),
             )
-            # Add column to main Dataset and set its role
             data.ds.add_column(values, {col: TargetRole()})
         return data

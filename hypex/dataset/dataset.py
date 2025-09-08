@@ -723,6 +723,20 @@ class Dataset(DatasetBase):
             data=self._backend.replace(to_replace=to_replace, value=value, regex=regex),
         )
 
+    def get_matrix_value(self, method: str, col1: str, col2: str) -> float:
+        """
+        Получить значение из матрицы (cov/corr) между двумя колонками.
+        method: 'cov' или 'corr'
+        col1, col2: имена колонок
+        """
+        if method == 'cov':
+            matrix = self._backend.data[[col1, col2]].cov()
+        elif method == 'corr':
+            matrix = self._backend.data[[col1, col2]].corr()
+        else:
+            raise ValueError(f"Unknown method: {method}")
+        return matrix.loc[col1, col2]
+
 
 class ExperimentData:
     def __init__(self, data: Dataset):
