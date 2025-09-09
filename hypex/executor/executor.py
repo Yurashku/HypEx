@@ -209,7 +209,7 @@ class MLExecutor(Calculator, ABC):
         for i in range(value.shape[1]):
             data.set_value(
                 ExperimentDataEnum.additional_fields,
-                f"{self.id}{i}{ID_SPLIT_SYMBOL}",
+                f"{self.id}{ID_SPLIT_SYMBOL}{i}",
                 value=value.iloc[:, i],
                 key=key,
                 role=AdditionalMatchingRole(),

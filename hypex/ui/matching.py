@@ -54,16 +54,43 @@ class MatchingOutput(Output):
                     matched_data.reindex(experiment_data.ds.index), axis=1
                 )
 
+    def _reformat_resume(self, resume: dict[str, Any]):
+        """
+        Reformats a flat resume dictionary with composite keys into a nested structure.
+        
+        This function processes keys containing ID_SPLIT_SYMBOL to create
+        a hierarchical resume structure. Keys without the split symbol are ignored.
+        """
+        
+        reformatted_resume: dict[str, Any] = {}
+
+        # Iterate through each key-value pair in the original resume in order to skip the keys that don't contain the ID_SPLIT_SYMBOL (have only one level of hierarchy)
+        for key, value in resume.items():
+            if ID_SPLIT_SYMBOL not in key:
+                continue
+
+            keys = key.split(ID_SPLIT_SYMBOL)
+
+            # Special handling for 'indexes' which requires different nesting structure
+            if keys[0] == "indexes":
+                # For keys with more than two components (e.g., indexes, # neighbour, strata)
+                if len(keys) > 2:
+                    reformatted_resume.setdefault("indexes", {}).setdefault(
+                        keys[1], {}
+                    )[keys[2]] = value
+                else:
+                    # For two-component keys (e.g., indexes, strata)
+                    reformatted_resume.setdefault("indexes", {})[keys[1]] = value
+            else:
+                # Handle non-indexes keys
+                l1_key = keys[0] if len(keys) < 3 else f"{keys[2]} {keys[0]}"
+                reformatted_resume.setdefault(l1_key, {})[keys[1]] = value
+
+        return reformatted_resume
+
     def extract(self, experiment_data: ExperimentData):
         resume = self.resume_reporter.report(experiment_data)
-        reformatted_resume: dict[str, Any] = {}
-        for key, value in resume.items():
-            if ID_SPLIT_SYMBOL in key:
-                keys = key.split(ID_SPLIT_SYMBOL)
-                temp_key = keys[0] if len(keys) < 3 else f"{keys[2]} {keys[0]}"
-                if temp_key not in reformatted_resume:
-                    reformatted_resume[temp_key] = {}
-                reformatted_resume[temp_key].update({keys[1]: value})
+        reformatted_resume = self._reformat_resume(resume)
         if "indexes" in reformatted_resume.keys():
             group_indexes_id = experiment_data.ds.search_columns(GroupingRole())
             indexes = [
