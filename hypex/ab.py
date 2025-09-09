@@ -131,7 +131,7 @@ class ABTest(ExperimentShell):
             ValueError: If both cuped_features and cupac_features are specified.
         """
         super().__init__(
-            experiment=self._make_experiment(additional_tests, multitest_method, cuped_features, cupac_features),
+            experiment=self._make_experiment(additional_tests, multitest_method, cuped_features, cupac_features, cupac_model),
             output=ABOutput(),
         )
         if t_test_equal_var is not None:
