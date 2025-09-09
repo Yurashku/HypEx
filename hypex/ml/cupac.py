@@ -93,23 +93,23 @@ class CUPACExecutor(MLExecutor):
             raise RuntimeError("CUPACExecutor not fitted. Call fit() first.")
         return self.extension.predict(X)
 
-    @staticmethod
-    def _calculate_variance_reduction(y: np.ndarray, pred: np.ndarray) -> float:
-        """Calculate variance reduction percentage between y and prediction pred.
+    # @staticmethod
+    # def _calculate_variance_reduction(y: np.ndarray, pred: np.ndarray) -> float:
+    #     """Calculate variance reduction percentage between y and prediction pred.
 
-        Args:
-            y: true values (1D numpy array)
-            pred: predictions (1D numpy array)
+    #     Args:
+    #         y: true values (1D numpy array)
+    #         pred: predictions (1D numpy array)
 
-        Returns:
-            Variance reduction percentage (float, >= 0).
-        """
-        pred_centered = pred - np.mean(pred)
-        if np.var(pred_centered) < 1e-10:
-            return 0.0
-        theta = np.cov(y, pred_centered)[0, 1] / np.var(pred_centered)
-        y_adj = y - theta * pred_centered
-        return float(max(0, (1 - np.var(y_adj) / np.var(y)) * 100))
+    #     Returns:
+    #         Variance reduction percentage (float, >= 0).
+    #     """
+    #     pred_centered = pred - np.mean(pred)
+    #     if np.var(pred_centered) < 1e-10:
+    #         return 0.0
+    #     theta = np.cov(y, pred_centered)[0, 1] / np.var(pred_centered)
+    #     y_adj = y - theta * pred_centered
+    #     return float(max(0, (1 - np.var(y_adj) / np.var(y)) * 100))
 
     def execute(self, data: ExperimentData) -> ExperimentData:
         self.fit(data.ds)
