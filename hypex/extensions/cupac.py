@@ -19,7 +19,8 @@ class CupacPandasExtension:
         self.best_model_names = {}
         self.is_fitted = False
 
-    def fit(self, df):
+    def fit(self, ds):
+        df = ds.data.copy()
         all_models = {k.lower(): v for k, v in CUPAC_MODELS.items()}
         self.fitted_models = {}
         self.best_model_names = {}
@@ -61,7 +62,8 @@ class CupacPandasExtension:
         self.is_fitted = True
         return self
 
-    def predict(self, df):
+    def predict(self, ds):
+        df = ds.data.copy()
         import numpy as np
         result = {}
         for target_feature, pre_target_features in self.cupac_features.items():
@@ -130,12 +132,12 @@ class CupacExtension(MLExtension):
 
     def fit(self, X: Dataset, Y: Dataset = None) -> 'CupacExtension':
         ext = self._get_backend_ext(X)
-        ext.fit(X.backend.data.copy())
+        ext.fit(X)
         return self
 
     def predict(self, X: Dataset) -> Dict[str, Any]:
         ext = self._get_backend_ext(X)
-        return ext.predict(X.backend.data.copy())
+        return ext.predict(X)
 
     def calc(self, data: Dataset, **kwargs):
         self.fit(data)
