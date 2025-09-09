@@ -1,10 +1,6 @@
 import enum
 
-@enum.unique
-class RenameEnum(enum.Enum):
-    all = "all"
-    columns = "columns"
-    index = "index"
+
 
 @enum.unique
 class ExperimentDataEnum(enum.Enum):
@@ -40,3 +36,10 @@ class ABNTestMethodsEnum(enum.Enum):
     fdr_tsbh = "fdr_tsbh"
     fdr_tsbky = "fdr_tsbky"
     quantile = "quantile"
+
+
+@enum.unique
+class RenameEnum(enum.Enum):
+    all = "all"
+    columns = "columns"
+    index = "index"

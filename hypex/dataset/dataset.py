@@ -725,9 +725,9 @@ class Dataset(DatasetBase):
 
     def get_matrix_value(self, method: str, col1: str, col2: str) -> float:
         """
-        Получить значение из матрицы (cov/corr) между двумя колонками.
-        method: 'cov' или 'corr'
-        col1, col2: имена колонок
+        Get the value from a matrix (cov/corr) between two columns.
+        method: 'cov' or 'corr'
+        col1, col2: column names
         """
         if method == 'cov':
             matrix = self._backend.data[[col1, col2]].cov()
