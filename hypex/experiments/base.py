@@ -10,13 +10,7 @@ from ..utils import ExperimentDataEnum
 
 class Experiment(Executor):
     def _detect_transformer(self) -> bool:
-        """Return True if any executor is a transformer.
-
-        Use getattr to avoid AttributeError if executor doesn't define the flag.
-        """
-        return any(
-            getattr(executor, "_is_transformer", False) for executor in self.executors
-        )
+        return all(executor._is_transformer for executor in self.executors)
 
     def get_executor_ids(
         self, searched_classes: type | Iterable[type] | None = None
@@ -65,11 +59,7 @@ class Experiment(Executor):
         return data.set_value(ExperimentDataEnum.analysis_tables, self.id, value)
 
     def execute(self, data: ExperimentData) -> ExperimentData:
-        if self.transformer:
-            experiment_data = deepcopy(data)
-        else:
-            experiment_data = data
-
+        experiment_data = deepcopy(data) if self.transformer else data
         for executor in self.executors:
             executor.key = self.key
             experiment_data = executor.execute(experiment_data)
