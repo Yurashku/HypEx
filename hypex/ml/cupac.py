@@ -1,7 +1,7 @@
 from typing import Any, Optional
 import numpy as np
 from ..dataset.dataset import Dataset, ExperimentData
-from ..dataset.roles import TargetRole
+from ..dataset.roles import TargetRole, StatisticRole
 from ..executor import MLExecutor
 from ..utils import ExperimentDataEnum
 
@@ -93,38 +93,26 @@ class CUPACExecutor(MLExecutor):
             raise RuntimeError("CUPACExecutor not fitted. Call fit() first.")
         return self.extension.predict(X)
 
-    # @staticmethod
-    # def _calculate_variance_reduction(y: np.ndarray, pred: np.ndarray) -> float:
-    #     """Calculate variance reduction percentage between y and prediction pred.
+    def get_variance_reductions(self):
+        if not hasattr(self, "extension"):
+            raise RuntimeError("CUPACExecutor not fitted. Call fit() first.")
+        return self.extension.get_variance_reductions()
 
-    #     Args:
-    #         y: true values (1D numpy array)
-    #         pred: predictions (1D numpy array)
 
-    #     Returns:
-    #         Variance reduction percentage (float, >= 0).
-    #     """
-    #     pred_centered = pred - np.mean(pred)
-    #     if np.var(pred_centered) < 1e-10:
-    #         return 0.0
-    #     theta = np.cov(y, pred_centered)[0, 1] / np.var(pred_centered)
-    #     y_adj = y - theta * pred_centered
-    #     return float(max(0, (1 - np.var(y_adj) / np.var(y)) * 100))
 
     def execute(self, data: ExperimentData) -> ExperimentData:
         self.fit(data.ds)
-        cupac_result = self.predict(data.ds)
-        for col, values in cupac_result.items():
-            ds_ml = Dataset.from_dict(
-                {col: values},
-                roles={col: TargetRole()},
-                index=data.ds.index,
+        predictions = self.predict(data.ds)
+        new_ds = data.ds
+        for key, pred in predictions.items():
+            if hasattr(pred, 'values'):
+                pred = pred.values
+            new_ds = new_ds.add_column(data=pred, role={key: TargetRole()})
+        # Save variance reductions to additional_fields
+        variance_reductions = self.get_variance_reductions()
+        for key, reduction in variance_reductions.items():
+            data.additional_fields = data.additional_fields.add_column(
+                data=[reduction],
+                role={key: StatisticRole()}
             )
-            data.set_value(
-                ExperimentDataEnum.ml,
-                executor_id=col,
-                value=ds_ml,
-                role=TargetRole(),
-            )
-            data.ds.add_column(values, {col: TargetRole()})
-        return data
+        return data.copy(data=new_ds)

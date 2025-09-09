@@ -17,6 +17,7 @@ class CupacPandasExtension:
         self.random_state = random_state
         self.fitted_models = {}
         self.best_model_names = {}
+        self.variance_reductions = {}
         self.is_fitted = False
 
     def fit(self, ds):
@@ -35,6 +36,9 @@ class CupacPandasExtension:
                 model.fit(X_cov, y)
                 self.fitted_models[target_feature] = model
                 self.best_model_names[target_feature] = explicit_models[0]
+                # Calculate variance reduction for the model
+                pred = model.predict(X_cov)
+                self.variance_reductions[target_feature] = self._calculate_variance_reduction(y.to_numpy(), pred)
                 continue
             best_score = -np.inf
             best_model = None
@@ -59,6 +63,9 @@ class CupacPandasExtension:
             best_model.fit(X_cov, y)
             self.fitted_models[target_feature] = best_model
             self.best_model_names[target_feature] = best_model_name
+            # Calculate variance reduction for the best model
+            pred = best_model.predict(X_cov)
+            self.variance_reductions[target_feature] = self._calculate_variance_reduction(y.to_numpy(), pred)
         self.is_fitted = True
         return self
 
@@ -76,6 +83,9 @@ class CupacPandasExtension:
             y_adj = y - pred + np.mean(y)
             result[f"{target_feature}_cupac"] = y_adj
         return result
+
+    def get_variance_reductions(self):
+        return {f"{target}_cupac_variance_reduction": reduction for target, reduction in self.variance_reductions.items()}
 
     def _select_explicit_models(self, all_models):
         if self.cupac_model:
@@ -133,6 +143,7 @@ class CupacExtension(MLExtension):
     def fit(self, X: Dataset, Y: Dataset = None) -> 'CupacExtension':
         ext = self._get_backend_ext(X)
         ext.fit(X)
+        self._fitted_ext = ext  # Save reference
         return self
 
     def predict(self, X: Dataset) -> Dict[str, Any]:
@@ -142,3 +153,8 @@ class CupacExtension(MLExtension):
     def calc(self, data: Dataset, **kwargs):
         self.fit(data)
         return self.predict(data)
+
+    def get_variance_reductions(self):
+        if not hasattr(self, '_fitted_ext'):
+            raise RuntimeError("Extension not fitted. Call fit() first.")
+        return self._fitted_ext.get_variance_reductions()

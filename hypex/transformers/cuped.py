@@ -1,7 +1,7 @@
 from typing import Any, Sequence
 from copy import deepcopy
 from ..dataset.dataset import Dataset, ExperimentData
-from ..dataset.roles import TargetRole, PreTargetRole
+from ..dataset.roles import TargetRole, PreTargetRole, StatisticRole
 from ..utils.adapter import Adapter
 from .abstract import Transformer
 
@@ -40,6 +40,23 @@ class CUPEDTransformer(Transformer):
             )
         return result
 
+    @classmethod
+    def calc(cls, data: Dataset, **kwargs):
+        return cls._inner_function(data, **kwargs)
+
     def execute(self, data: ExperimentData) -> ExperimentData:
         new_ds = self.calc(data=data.ds, cuped_features=self.cuped_features)
+        # Calculate variance reductions
+        variance_reductions = {}
+        for target_feature, pre_target_feature in self.cuped_features.items():
+            original_var = data.ds[target_feature].var()
+            adjusted_var = new_ds[f"{target_feature}_cuped"].var()
+            variance_reduction = (1 - adjusted_var / original_var) * 100 if original_var > 0 else 0.0
+            variance_reductions[f"{target_feature}_cuped"] = variance_reduction
+        # Save variance reductions to additional_fields
+        for metric, reduction in variance_reductions.items():
+            data.additional_fields = data.additional_fields.add_column(
+                data=[reduction],
+                role={f"{metric}_variance_reduction": StatisticRole()}
+            )
         return data.copy(data=new_ds)
