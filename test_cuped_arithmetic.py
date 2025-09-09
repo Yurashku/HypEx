@@ -30,10 +30,10 @@ def test_cuped_arithmetic():
     except Exception as e:
         print('Ошибка на этапе 1:', type(e), e)
         return
-
+    
     # Этап 2: theta * step1
     try:
-        step2 = theta * step1
+        step2 = step1 * theta
         print('step2 (theta * step1):')
         print(step2.data)
     except Exception as e:

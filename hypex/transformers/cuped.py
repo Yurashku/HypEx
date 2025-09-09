@@ -26,26 +26,20 @@ class CUPEDTransformer(Transformer):
         data: Dataset,
         cuped_features: dict[str, str],
     ) -> Dataset:
-        # cuped_features: {target_feature: pre_target_feature}
-        # Work on a deepcopy so original Dataset isn't mutated by the transformer.
-        result_ds = deepcopy(data)
+        result = deepcopy(data)
         for target_feature, pre_target_feature in cuped_features.items():
-            # Все вычисления через Dataset
-            cov_xy = result_ds.get_matrix_value('cov', target_feature, pre_target_feature)
-            std_y = result_ds[target_feature].std()
-            std_x = result_ds[pre_target_feature].std()
+            cov_xy = result.get_matrix_value('cov', target_feature, pre_target_feature)
+            std_y = result[target_feature].std()
+            std_x = result[pre_target_feature].std()
             theta = cov_xy / (std_y * std_x)
-            # mean для pre_target_feature
-            pre_target_mean = result_ds[pre_target_feature].mean()
-            # CUPED корректировка: все операции между Dataset
-            new_values_ds = result_ds[target_feature] - theta * (result_ds[pre_target_feature] - pre_target_mean)
-            # Присваиваем скорректированные значения
-            result_ds[target_feature] = new_values_ds
-            result_ds = result_ds.astype({target_feature: result_ds.roles[target_feature].data_type or float})
-        return result_ds
+            pre_target_mean = result[pre_target_feature].mean()
+            new_values_ds = result[target_feature] - (result[pre_target_feature] - pre_target_mean) * theta
+            result = result.add_column(
+                data=new_values_ds,
+                role={f"{target_feature}_cuped": TargetRole()}
+            )
+        return result
 
     def execute(self, data: ExperimentData) -> ExperimentData:
-        result = data.copy(
-            data=self.calc(data=data.ds, cuped_features=self.cuped_features)
-        )
-        return result
+        new_ds = self.calc(data=data.ds, cuped_features=self.cuped_features)
+        return data.copy(data=new_ds)

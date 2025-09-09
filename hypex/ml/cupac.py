@@ -15,11 +15,7 @@ from ..utils.models import CUPAC_MODELS
 class CUPACExecutor(MLExecutor):
     """Executor that fits predictive models to pre-period covariates and adjusts target
     features using the CUPAC approach (model-based prediction adjustment similar to CUPED).
-
-    cupac_features should be a mapping: {target_feature: list[pre_target_feature, ...]}.
-    It may also include a top-level key 'model' to request a specific model name.
     """
-
     def __init__(
         self,
         cupac_features: dict[str, list],
