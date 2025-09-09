@@ -55,22 +55,34 @@ class MatchingOutput(Output):
                 )
 
     def _reformat_resume(self, resume: dict[str, Any]):
+        """
+        Reformats a flat resume dictionary with composite keys into a nested structure.
+        
+        This function processes keys containing ID_SPLIT_SYMBOL to create
+        a hierarchical resume structure. Keys without the split symbol are ignored.
+        """
+        
         reformatted_resume: dict[str, Any] = {}
 
+        # Iterate through each key-value pair in the original resume in order to skip the keys that don't contain the ID_SPLIT_SYMBOL (have only one level of hierarchy)
         for key, value in resume.items():
             if ID_SPLIT_SYMBOL not in key:
                 continue
 
             keys = key.split(ID_SPLIT_SYMBOL)
 
+            # Special handling for 'indexes' which requires different nesting structure
             if keys[0] == "indexes":
+                # For keys with more than two components (e.g., indexes, # neighbour, strata)
                 if len(keys) > 2:
                     reformatted_resume.setdefault("indexes", {}).setdefault(
                         keys[1], {}
                     )[keys[2]] = value
                 else:
+                    # For two-component keys (e.g., indexes, strata)
                     reformatted_resume.setdefault("indexes", {})[keys[1]] = value
             else:
+                # Handle non-indexes keys
                 l1_key = keys[0] if len(keys) < 3 else f"{keys[2]} {keys[0]}"
                 reformatted_resume.setdefault(l1_key, {})[keys[1]] = value
 
