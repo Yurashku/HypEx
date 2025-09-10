@@ -28,7 +28,11 @@ class CUPEDTransformer(Transformer):
     ) -> Dataset:
         result = deepcopy(data)
         for target_feature, pre_target_feature in cuped_features.items():
-            cov_xy = result.get_matrix_value('cov', target_feature, pre_target_feature)
+            mean_xy = (result[target_feature] * result[pre_target_feature]).mean()
+            mean_x = result[pre_target_feature].mean()
+            mean_y = result[target_feature].mean()
+            cov_xy = mean_xy - mean_x * mean_y
+            
             std_y = result[target_feature].std()
             std_x = result[pre_target_feature].std()
             theta = cov_xy / (std_y * std_x)
@@ -41,8 +45,8 @@ class CUPEDTransformer(Transformer):
         return result
 
     @classmethod
-    def calc(cls, data: Dataset, **kwargs):
-        return cls._inner_function(data, **kwargs)
+    def calc(cls, data: Dataset, cuped_features: dict[str, str], **kwargs):
+        return cls._inner_function(data, cuped_features)
 
     def execute(self, data: ExperimentData) -> ExperimentData:
         new_ds = self.calc(data=data.ds, cuped_features=self.cuped_features)
