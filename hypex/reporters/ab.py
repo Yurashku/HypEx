@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 
 from ..analyzers.ab import ABAnalyzer
 from ..comparators import Chi2Test, TTest, UTest
-from ..dataset import Dataset, ExperimentData
+from ..dataset import Dataset, ExperimentData, StatisticRole
 from ..utils import ExperimentDataEnum
 from .aa import OneAADictReporter
 
@@ -52,16 +52,10 @@ class ABDatasetReporter(ABDictReporter):
         
         # Convert to Dataset
         if report_data:
-            from ..dataset import StatisticRole, Dataset
-            import pandas as pd
-            
-            # Create DataFrame
-            df = pd.DataFrame(report_data)
-            
-            return Dataset(
-                data=df, 
+            return Dataset.from_dict(
+                data=report_data,
                 roles={
-                    "Transformed Metric Name": StatisticRole(), 
+                    "Transformed Metric Name": StatisticRole(),
                     "Variance Reduction (%)": StatisticRole()
                 }
             )

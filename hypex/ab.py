@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from .analyzers.ab import ABAnalyzer
 from .comparators import Chi2Test, GroupDifference, GroupSizes, TTest, UTest
 from .dataset import TargetRole, TreatmentRole
+from .executor.executor import Executor
 from .experiments.base import Experiment, OnRoleExperiment
 from .ui.ab import ABOutput
 from .ui.base import ExperimentShell
@@ -47,29 +48,48 @@ class ABTest(ExperimentShell):
     """
 
     @staticmethod
-    def _make_experiment(additional_tests, multitest_method, cuped_features=None, cupac_features=None, cupac_model=None):
-        test_mapping = {
+    def _make_experiment(
+        additional_tests: (
+            str | list[Literal["t-test", "u-test", "chi2-test"]] | None
+        ),
+        multitest_method: (
+            Literal[
+                "bonferroni",
+                "sidak",
+                "holm-sidak",
+                "holm",
+                "simes-hochberg",
+                "hommel",
+                "fdr_bh",
+                "fdr_by",
+                "fdr_tsbh",
+                "fdr_tsbhy",
+                "quantile",
+            ] | None
+        ),
+        cuped_features: dict[str, str] | None,
+        cupac_features: dict[str, list[str]] | None,
+        cupac_model: str | list[str] | None,
+    ) -> Experiment:
+        test_mapping: dict[str, Executor] = {
             "t-test": TTest(compare_by="groups", grouping_role=TreatmentRole()),
             "u-test": UTest(compare_by="groups", grouping_role=TreatmentRole()),
             "chi2-test": Chi2Test(compare_by="groups", grouping_role=TreatmentRole()),
         }
-        on_role_executors = [GroupDifference(grouping_role=TreatmentRole())]
+        on_role_executors: list[Executor] = [GroupDifference(grouping_role=TreatmentRole())]
         additional_tests = ["t-test"] if additional_tests is None else additional_tests
         additional_tests = (
             additional_tests
             if isinstance(additional_tests, list)
             else [additional_tests]
         )
-        for i in additional_tests:
-            on_role_executors += [test_mapping[i]]
+        for test_name in additional_tests:
+            on_role_executors.append(test_mapping[test_name])
 
 
-
-        if cuped_features and cupac_features:
-            raise ValueError("You can use only one transformer/executor: either CUPED or CUPACExecutor, not both.")
 
         # Build base executors list
-        executors = [
+        executors: list[Executor] = [
             GroupSizes(grouping_role=TreatmentRole()),
             OnRoleExperiment(
                 executors=on_role_executors,
@@ -85,7 +105,7 @@ class ABTest(ExperimentShell):
         ]
         if cuped_features:
             executors.insert(0, CUPEDTransformer(cuped_features=cuped_features))
-        elif cupac_features:
+        if cupac_features:
             from .ml import CUPACExecutor
             executors.insert(0, CUPACExecutor(cupac_features=cupac_features, cupac_model=cupac_model))
 
@@ -116,7 +136,7 @@ class ABTest(ExperimentShell):
         ) = "holm",
         t_test_equal_var: bool | None = None,
         cuped_features: dict[str, str] | None = None,
-        cupac_features: dict | None = None,
+        cupac_features: dict[str, list[str]] | None = None,
         cupac_model: str | list[str] | None = None,
         ):
         """
@@ -125,10 +145,8 @@ class ABTest(ExperimentShell):
             multitest_method: Method to use for multiple testing correction. Valid options are: "bonferroni", "sidak", "holm-sidak", "holm", "simes-hochberg", "hommel", "fdr_bh", "fdr_by", "fdr_tsbh", "fdr_tsbhy", "quantile". Defaults to "holm".
             t_test_equal_var: Whether to use equal variance in t-test (optional).
             cuped_features: dict[str, str] — Dictionary {target_feature: pre_target_feature} for CUPED. Only dict is allowed.
-            cupac_features: dict — Parameters for CUPAC, e.g. {"target1": ["cov1", "cov2"], ...}.
-            cupac_model: str or list of str — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try. If None, all available models will be tried and the best will be selected by variance reduction.
-        Raises:
-            ValueError: If both cuped_features and cupac_features are specified.
+            cupac_features: dict[str, list[str]] — Parameters for CUPAC, e.g. {"target1": ["cov1", "cov2"], ...}.
+            cupac_model: str | list[str] — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try. If None, all available models will be tried and the best will be selected by variance reduction.
         """
         super().__init__(
             experiment=self._make_experiment(additional_tests, multitest_method, cuped_features, cupac_features, cupac_model),

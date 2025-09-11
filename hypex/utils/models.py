@@ -7,9 +7,22 @@ except ImportError:
     CATBOOST_AVAILABLE = False
 
 CUPAC_MODELS = {
-    "linear": LinearRegression(),
-    "ridge": Ridge(),
-    "lasso": Lasso(),
+    "linear": {
+        "pandas": LinearRegression(),
+        "polars": None,
+    },
+    "ridge": {
+        "pandas": Ridge(),
+        "polars": None,
+    },
+    "lasso": {
+        "pandas": Lasso(),
+        "polars": None,
+    },
 }
+
 if CATBOOST_AVAILABLE:
-    CUPAC_MODELS["catboost"] = CatBoostRegressor(verbose=0)
+    CUPAC_MODELS["catboost"] = {
+        "pandas": CatBoostRegressor(verbose=0),
+        "polars": None,
+    }
