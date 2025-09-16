@@ -628,76 +628,43 @@ comparator = GroupDifference(
 
 ```python
 # Данные:
-# | user_id | group   | before_treatment | after_treatment |
-# |---------|---------|------------------|-----------------|
-# | 1       | control | 100              | 105             |
-# | 2       | test    | 100              | 150             |
-# | 3       | control | 80               | 82              |
-# | 4       | test    | 80               | 120             |
+# | user_id | group   | pre_revenue | post_revenue |
+# |---------|---------|-------------|--------------|
+# | 1       | control | 100         | 110          |
+# | 2       | test    | 100         | 150          |
 
-comparator = TTest(
+comparator = GroupDifference(
     compare_by="columns_in_groups",
-    grouping_role=TreatmentRole(),      # группировка по "group"
-    baseline_role=PreTargetRole(),      # baseline: "before_treatment"
-    target_roles=TargetRole()           # сравнить с: "after_treatment"
+    grouping_role=TreatmentRole(),    # группировка по "group"
+    baseline_role=PreTargetRole(),    # baseline: "pre_revenue"
+    target_roles=TargetRole()          # сравнить с: "post_revenue"
 )
 
 # Результат:
-# Для группы control: сравнение before_treatment vs after_treatment
-# Для группы test: сравнение before_treatment vs after_treatment
-# Позволяет оценить эффект внутри каждой группы отдельно
+# control: сравнение pre_revenue vs post_revenue
+# test: сравнение pre_revenue vs post_revenue
 ```
 
 #### Режим "cross" — перекрестное сравнение
-Самый сложный режим. Берет baseline из одной группы (обычно control) и сравнивает с метриками из других групп. Используется для difference-in-differences анализа.
+Самый сложный режим. Сравнивает изменения между колонками в разных группах. Используется для difference-in-differences анализа.
 
 ```python
-# Данные:
-# | user_id | group   | metric_A | metric_B |
-# |---------|---------|----------|----------|
-# | 1       | control | 100      | 50       |
-# | 2       | test1   | 120      | 60       |
-# | 3       | control | 90       | 45       |
-# | 4       | test2   | 130      | 70       |
-
-comparator = TTest(
+comparator = GroupDifference(
     compare_by="cross",
-    grouping_role=TreatmentRole(),      # группировка по "group"
-    baseline_role=PreTargetRole(),      # baseline из control: "metric_A"
-    target_roles=TargetRole()           # сравнить с метриками из test групп
+    grouping_role=TreatmentRole(),
+    baseline_role=PreTargetRole(),
+    target_roles=TargetRole()
 )
 
-# Результат:
-# control.metric_A vs test1.metric_A
-# control.metric_A vs test1.metric_B
-# control.metric_A vs test2.metric_A
-# control.metric_A vs test2.metric_B
-
-# Это позволяет оценить, насколько изменения в test группах
-# отличаются от baseline в control группе
+# Сравнивает:
+# (test_post - test_pre) vs (control_post - control_pre)
 ```
 
-**Практическое применение режима "cross":**
-
-Режим "cross" особенно полезен для:
-1. **Difference-in-Differences (DiD)** — оценка причинно-следственной связи
-2. **Synthetic control** — когда control группа служит базой для сравнения
-3. **Multiple treatment arms** — когда есть несколько вариантов воздействия
-
-```python
-# Пример DiD анализа
-# До внедрения фичи:
-# control: revenue = 100, retention = 0.5
-# test: revenue = 100, retention = 0.5
-
-# После внедрения фичи (только в test):
-# control: revenue = 110, retention = 0.52 (естественный рост)
-# test: revenue = 140, retention = 0.65 (рост + эффект фичи)
-
-# С режимом "cross" можно оценить:
-# (test_after - test_before) - (control_after - control_before)
-# = (140 - 100) - (110 - 100) = 30 - истинный эффект фичи
-```
+**Применение режимов:**
+- **"groups"** — классические A/B тесты, сравнение метрик между группами
+- **"columns"** — анализ изменений во времени, pre/post анализ
+- **"columns_in_groups"** — гетерогенные эффекты, анализ по сегментам
+- **"cross"** — каузальная инференция, DiD анализ
 
 #### Базовые метрики (GroupDifference, GroupSizes)
 
@@ -821,69 +788,64 @@ class ConstFilter(Transformer):
 class CorrFilter(Transformer):
     def _inner_function(data: Dataset, threshold: float = 0.8) -> Dataset:
         corr_matrix = data.corr()
+        # Находим пары с высокой корреляцией
         for col1, col2 in high_corr_pairs:
-            # Удаляем признак с меньшей вариативностью
-            if data[col1].cv() < data[col2].cv():
-                data.roles[col1] = InfoRole()
+            if abs(corr_matrix[col1][col2]) > threshold:
+                data.roles[col2] = InfoRole()  # Понижаем роль второго
         return data
 ```
 
-**OutliersFilter** — фильтрует выбросы по процентилям:
+**OutliersFilter** — удаляет выбросы:
 ```python
 class OutliersFilter(Transformer):
-    def __init__(self, lower_percentile: float = 0.05, upper_percentile: float = 0.95):
+    def __init__(self, 
+                 lower_percentile: float = 0.05,
+                 upper_percentile: float = 0.95):
         self.lower_percentile = lower_percentile
         self.upper_percentile = upper_percentile
     
     def _inner_function(data: Dataset, target_cols, lower, upper) -> Dataset:
-        mask = (data[target_cols] < data[target_cols].quantile(lower)) | \
-               (data[target_cols] > data[target_cols].quantile(upper))
-        return data.drop(data[mask].index)
+        for col in target_cols:
+            q_low = data[col].quantile(lower)
+            q_high = data[col].quantile(upper)
+            data = data[(data[col] >= q_low) & (data[col] <= q_high)]
+        return data
 ```
 
-#### Обработка данных
+#### Обработка пропусков и категорий
 
 **NaFiller** — заполнение пропущенных значений:
 ```python
 class NaFiller(Transformer):
-    def __init__(self, method: Literal["ffill", "bfill"] = None, values=None):
-        self.method = method
-        self.values = values
+    def __init__(self, method: str = "ffill"):
+        self.method = method  # 'ffill', 'bfill', 'mean', 'median', etc.
     
-    def _inner_function(data: Dataset, target_cols, method, values) -> Dataset:
-        for column in target_cols:
-            data[column] = data[column].fillna(values=values, method=method)
+    def _inner_function(data: Dataset, target_cols, method) -> Dataset:
+        if method in ['ffill', 'bfill']:
+            return data.fillna(method=method)
+        elif method == 'mean':
+            for col in target_cols:
+                data[col].fillna(data[col].mean(), inplace=True)
         return data
 ```
 
-**CategoryAggregator** — объединение редких категорий:
+**CategoryAggregator** — агрегация редких категорий:
 ```python
 class CategoryAggregator(Transformer):
-    def __init__(self, threshold: int = 15, new_group_name: str = "Other"):
-        self.threshold = threshold
-        self.new_group_name = new_group_name
+    def __init__(self, min_frequency: float = 0.01):
+        self.min_frequency = min_frequency
     
-    def _inner_function(data: Dataset, target_cols, threshold, new_name) -> Dataset:
-        for column in target_cols:
-            value_counts = data[column].value_counts()
-            rare_values = value_counts[value_counts < threshold].index
-            data[column] = data[column].replace(rare_values, new_name)
+    def _inner_function(data: Dataset, target_cols, min_freq) -> Dataset:
+        for col in target_cols:
+            value_counts = data[col].value_counts(normalize=True)
+            rare_categories = value_counts[value_counts < min_freq].index
+            data[col] = data[col].replace(rare_categories, 'Other')
         return data
 ```
 
-**Shuffle** — перемешивание данных:
-```python
-class Shuffle(Transformer):
-    def __init__(self, random_state: int = None):
-        self.random_state = random_state
-    
-    def _inner_function(data: Dataset, random_state) -> Dataset:
-        return data.sample(frac=1, random_state=random_state)
-```
+### Encoders: Кодирование признаков
 
-### Encoders: Кодирование категориальных переменных
-
-Encoders преобразуют категориальные переменные в числовые. Результат сохраняется в additional_fields.
+Encoders преобразуют категориальные признаки в числовые. Результат сохраняется в additional_fields.
 
 ```python
 class Encoder(Calculator):
@@ -914,117 +876,45 @@ class DummyEncoder(Encoder):
 
 GroupOperators выполняют специализированные операции над группами данных, часто используемые в matching и causal inference.
 
-#### SMD (Standardized Mean Difference)
-
-Стандартизированная разница средних — метрика баланса ковариат:
+**SMD (Standardized Mean Difference)** — стандартизированная разница средних:
 ```python
 class SMD(GroupOperator):
-    def _inner_function(cls, data: Dataset, test_data: Dataset) -> float:
-        return (data.mean() - test_data.mean()) / data.std()
+    def _inner_function(data: Dataset, test_data: Dataset) -> float:
+        mean_diff = data.mean() - test_data.mean()
+        pooled_std = np.sqrt((data.var() + test_data.var()) / 2)
+        return mean_diff / pooled_std
 ```
 
-#### Bias — оценка смещения
-
-Оценивает смещение при matching:
+**Bias** — оценка смещения для matching:
 ```python
 class Bias(GroupOperator):
-    @staticmethod
-    def calc_coefficients(X: Dataset, Y: Dataset) -> list[float]:
-        # Линейная регрессия для оценки коэффициентов
-        return np.linalg.lstsq(X.values, Y.values, rcond=-1)[0]
-    
-    @staticmethod
-    def calc_bias(X: Dataset, X_matched: Dataset, coefficients: list[float]) -> list[float]:
-        # Вычисление смещения на основе разницы признаков
-        return [(j - i).dot(coefficients) for i, j in zip(X.values, X_matched.values)]
-```
-
-#### MatchingMetrics — метрики для matching
-
-Вычисляет различные метрики treatment effect:
-```python
-class MatchingMetrics(GroupOperator):
-    def __init__(self, metric: Literal["atc", "att", "ate"] = "ate"):
-        self.metric = metric  # Average Treatment on Controls/Treated/Everyone
-    
-    def _inner_function(cls, data, test_data, target_fields, metric, bias) -> dict:
-        # Вычисление Individual Treatment Effect
-        itt = test_data[target_fields[0]] - test_data[target_fields[1]]
-        itc = data[target_fields[1]] - data[target_fields[0]]
-        
-        # Коррекция на смещение
-        if bias:
-            itt -= bias["test"]
-            itc -= bias["control"]
-        
-        # Вычисление метрик с учетом весов
-        att = itt.mean()
-        atc = itc.mean()
-        ate = (att * len(test_data) + atc * len(data)) / (len(test_data) + len(data))
-        
-        # Вычисление стандартных ошибок и p-values
+    def _inner_function(data: Dataset, matched_data: Dataset) -> dict:
+        # Оценка качества matching через смещение
+        bias = (matched_data.mean() - data.mean()) / data.std()
         return {
-            "ATT": [att, se_att, p_val_att, ci_lower_att, ci_upper_att],
-            "ATC": [atc, se_atc, p_val_atc, ci_lower_atc, ci_upper_atc],
-            "ATE": [ate, se_ate, p_val_ate, ci_lower_ate, ci_upper_ate]
+            "bias": bias,
+            "bias_reduced": abs(bias) < 0.1  # Порог 10%
         }
 ```
 
-### MLExecutors: Машинное обучение
-
-MLExecutors интегрируют алгоритмы машинного обучения в pipeline экспериментов.
-
-#### Базовый класс MLExecutor
-
+**MatchingMetrics** — метрики качества matching:
 ```python
-class MLExecutor(Calculator, ABC):
-    @abstractmethod
-    def fit(self, X: Dataset, Y: Dataset = None) -> MLExecutor:
-        """Обучение модели"""
-        pass
+class MatchingMetrics(GroupOperator):
+    def __init__(self, metric: str = "ate"):
+        self.metric = metric  # 'ate', 'att', 'atc'
     
-    @abstractmethod
-    def predict(self, X: Dataset) -> Dataset:
-        """Предсказание"""
-        pass
-    
-    def score(self, X: Dataset, Y: Dataset) -> float:
-        """Оценка качества"""
-        pass
+    def _inner_function(data: Dataset, matched_indices: Dataset) -> dict:
+        if self.metric == "ate":  # Average Treatment Effect
+            effect = matched_treatment.mean() - matched_control.mean()
+        elif self.metric == "att":  # Average Treatment on Treated
+            effect = treated.mean() - matched_control_for_treated.mean()
+        # ... другие метрики
+        return {"effect": effect, "se": standard_error}
 ```
 
-#### FaissNearestNeighbors — поиск ближайших соседей
+### Splitters: Разделение данных
 
-Использует библиотеку FAISS для эффективного поиска ближайших соседей:
-```python
-class FaissNearestNeighbors(MLExecutor):
-    def __init__(self, 
-                 n_neighbors: int = 1,
-                 two_sides: bool = False,  # Искать пары в обе стороны
-                 test_pairs: bool = False,  # Пары для test группы
-                 faiss_mode: Literal["base", "fast", "auto"] = "auto"):
-        self.n_neighbors = n_neighbors
-        self.faiss_mode = faiss_mode
-    
-    def fit(self, X: Dataset) -> MLExecutor:
-        # Создание индекса FAISS
-        self.index = faiss.IndexFlatL2(X.shape[1])
-        if len(X) > 1_000_000 and self.faiss_mode in ["auto", "fast"]:
-            # Используем приближенный поиск для больших данных
-            self.index = faiss.IndexIVFFlat(self.index, 1, 1000)
-            self.index.train(X.values)
-        self.index.add(X.values)
-        return self
-    
-    def predict(self, X: Dataset) -> Dataset:
-        # Поиск ближайших соседей
-        distances, indices = self.index.search(X.values, self.n_neighbors)
-        return Dataset.from_dict({"indices": indices})
-```
-
-### Splitters: Разделение на группы
-
-Splitters отвечают за разделение данных на группы для A/A и A/B тестов.
+Splitters разделяют данные на группы для экспериментов.
 
 #### AASplitter — базовое разделение
 
@@ -1125,7 +1015,175 @@ pipeline = [
 
 Это обеспечивает максимальную гибкость при построении экспериментов.
 
-## 6. Слой экспериментов: Experiment Framework
+## 6. Analyzer'ы — комплексный анализ результатов
+
+Analyzer'ы представляют собой специальный класс Executor'ов, которые выполняют высокоуровневый анализ результатов экспериментов. В отличие от простых вычислительных блоков (Calculator'ов), Analyzer'ы работают с результатами множества других Executor'ов, агрегируют их и принимают комплексные решения.
+
+### Архитектура Analyzer'ов
+
+Analyzer'ы наследуются напрямую от Executor, минуя Calculator, так как их задача — не вычисления над сырыми данными, а анализ уже полученных результатов. Типичный Analyzer:
+
+1. **Извлекает результаты** предыдущих Executor'ов из ExperimentData
+2. **Анализирует и агрегирует** эти результаты согласно своей логике
+3. **Принимает решения** на основе комплексных критериев
+4. **Сохраняет итоговый анализ** в analysis_tables
+
+### OneAAStatAnalyzer — анализ одного A/A теста
+
+**Назначение:** Анализирует результаты статистических тестов для одного разбиения A/A теста.
+
+**Функциональность:**
+- Извлекает результаты всех примененных тестов (TTest, KSTest, Chi2Test)
+- Для каждой метрики подсчитывает количество прошедших тестов
+- Оценивает общее качество разбиения по pass rate
+- Классифицирует качество: excellent (>95%), good (>80%), acceptable (>60%), poor (<60%)
+
+**Входные данные:** Результаты статистических тестов в analysis_tables
+
+**Выходные данные:** 
+- Статистика по каждой метрике (passed/total tests, pass_rate, status)
+- Общая оценка качества разбиения (overall pass_rate, quality level)
+
+### AAScoreAnalyzer — выбор лучшего разбиения
+
+**Назначение:** Анализирует результаты множественных A/A тестов и выбирает оптимальное разбиение.
+
+**Функциональность:**
+- Извлекает результаты всех итераций OneAAStatAnalyzer
+- Вычисляет score для каждого разбиения согласно критерию:
+  - `max_pass_rate` — максимизация доли прошедших тестов
+  - `min_bias` — минимизация смещения между группами
+  - `balanced` — комбинация pass_rate и баланса групп
+- Ранжирует разбиения по качеству
+- Восстанавливает параметры лучшего Splitter'а
+- Применяет лучшее разбиение к данным
+
+**Входные данные:** Результаты множественных OneAAStatAnalyzer
+
+**Выходные данные:**
+- ID и параметры лучшего разбиения
+- Статистика по всем разбиениям (scores, mean, std)
+- Колонка с лучшим разбиением в additional_fields
+
+### ABAnalyzer — анализ A/B теста
+
+**Назначение:** Выполняет финальный анализ A/B теста с учетом множественного тестирования.
+
+**Функциональность:**
+- Проверяет достаточность размера выборки
+- Извлекает все p-values из проведенных тестов
+- Применяет коррекцию множественного тестирования:
+  - Bonferroni — консервативная коррекция
+  - Holm — последовательная коррекция
+  - FDR — контроль False Discovery Rate
+- Оценивает размер эффекта и его confidence interval
+- Разделяет статистическую и практическую значимость
+- Принимает решение по каждой метрике:
+  - `ship` — значимый и практичный эффект
+  - `monitor` — значимый, но малый эффект
+  - `investigate` — большой, но незначимый эффект
+  - `no_effect` — нет эффекта
+- Формирует общие рекомендации по эксперименту
+
+**Входные данные:** 
+- Результаты статистических тестов
+- Размеры групп из GroupSizes
+- Эффекты из GroupDifference
+
+**Выходные данные:**
+- Детальный анализ по каждой метрике
+- Скорректированные p-values
+- Общее решение и рекомендации
+- Оценка рисков и качества выборки
+
+### MatchingAnalyzer — оценка качества matching
+
+**Назначение:** Комплексная оценка качества matching'а между группами.
+
+**Функциональность:**
+- Извлекает matched индексы из FaissNearestNeighbors
+- Создает matched датасеты для control и treatment
+- Оценивает баланс ковариат через SMD (Standardized Mean Difference)
+- Вычисляет метрики качества:
+  - SMD — стандартизированная разница средних
+  - KS статистика — различие распределений
+  - Variance ratio — соотношение дисперсий
+- Оценивает treatment effect после matching
+- Выполняет диагностику проблем:
+  - Проверка размера matched выборки
+  - Идентификация несбалансированных ковариат
+  - Оценка common support region
+- Генерирует рекомендации по улучшению
+
+**Входные данные:**
+- Matched индексы из additional_fields
+- Исходные данные control и treatment групп
+
+**Выходные данные:**
+- Количество и доля matched пар
+- Баланс по каждой ковариате
+- Общие метрики качества matching
+- Treatment effect с доверительными интервалами
+- Диагностика и рекомендации
+
+### Паттерны использования Analyzer'ов
+
+#### 1. Последовательный анализ
+Analyzer'ы размещаются в конце pipeline'а для анализа накопленных результатов:
+```python
+experiment = Experiment([
+    DataPreparation(),
+    StatisticalTests(),
+    ABAnalyzer(multitest_method="fdr")
+])
+```
+
+#### 2. Иерархический анализ
+Один Analyzer использует результаты другого:
+```python
+experiment = Experiment([
+    ParamsExperiment(...),
+    OneAAStatAnalyzer(),  # Анализ каждого теста
+    AAScoreAnalyzer()      # Выбор лучшего
+])
+```
+
+#### 3. Условный анализ
+Выбор Analyzer'а на основе характеристик данных:
+```python
+IfExecutor(
+    condition=lambda d: d.n_metrics > 10,
+    if_executor=ABAnalyzer(multitest_method="fdr"),
+    else_executor=ABAnalyzer(multitest_method=None)
+)
+```
+
+### Создание кастомных Analyzer'ов
+
+Для создания своего Analyzer'а необходимо:
+
+1. **Наследоваться от Executor** (не от Calculator)
+2. **Реализовать метод execute** с логикой:
+   - Извлечение нужных результатов через `data.get_ids()`
+   - Анализ и агрегация результатов
+   - Сохранение через `data.set_value()`
+3. **Следовать конвенциям:**
+   - Результаты сохранять в analysis_tables
+   - Использовать Dataset для структурированных результатов
+   - Предоставлять summary и recommendations
+
+### Преимущества Analyzer'ов
+
+1. **Высокоуровневая абстракция** — скрывают сложность анализа за простым интерфейсом
+2. **Переиспользуемость** — стандартные паттерны анализа для типовых задач
+3. **Композируемость** — можно комбинировать разные виды анализа
+4. **Расширяемость** — легко добавлять новые типы анализа
+5. **Воспроизводимость** — стандартизированные методы обеспечивают консистентность
+6. **Decision-ready** — превращают сырые результаты в actionable insights
+
+Analyzer'ы являются ключевым компонентом для превращения множества технических результатов вычислений в понятные бизнес-решения и рекомендации.
+
+## 7. Слой экспериментов: Experiment Framework
 
 Слой экспериментов управляет композицией и оркестрацией Executor'ов. Он определяет, КАК и В КАКОМ ПОРЯДКЕ выполняются операции, предоставляя различные стратегии выполнения.
 
@@ -1228,52 +1286,57 @@ class ExperimentWithReporter(Experiment):
 
 ### CycledExperiment — многократное выполнение
 
-Выполняет эксперимент заданное количество раз (например, для оценки стабильности):
+Выполняет эксперимент заданное количество раз:
 
 ```python
 class CycledExperiment(ExperimentWithReporter):
     def __init__(self,
-                 executors: list[Executor],
+                 executors: Sequence[Executor],
                  reporter: DatasetReporter,
-                 n_iterations: int):
+                 n_iterations: int = 10):
         super().__init__(executors, reporter)
         self.n_iterations = n_iterations
     
     def execute(self, data: ExperimentData) -> ExperimentData:
         results = []
-        for i in tqdm(range(self.n_iterations)):
+        for i in range(self.n_iterations):
             # Каждая итерация начинается с чистых данных
-            result = self.one_iteration(data, str(i))
-            results.append(result)
+            iteration_result = self.one_iteration(data, key=str(i))
+            results.append(iteration_result)
         
         # Объединяем результаты всех итераций
-        final_result = results[0].append(results[1:])
-        return self._set_value(data, final_result)
+        combined_results = Dataset.concat(results)
+        
+        return data.set_value(
+            space=ExperimentDataEnum.analysis_tables,
+            executor_id=self.id,
+            value=combined_results
+        )
 ```
 
 **Применение:**
-- Оценка вариативности метрик
 - Bootstrap анализ
-- Проверка устойчивости результатов
+- Оценка стабильности результатов
+- Monte Carlo симуляции
 
 ### GroupExperiment — выполнение по группам
 
-Применяет эксперимент отдельно к каждой группе данных:
+Применяет эксперимент к каждой группе данных отдельно:
 
 ```python
 class GroupExperiment(ExperimentWithReporter):
     def __init__(self,
                  executors: Sequence[Executor],
-                 reporter: Reporter,
+                 reporter: DatasetReporter,
                  searching_role: ABCRole = GroupingRole()):
-        self.searching_role = searching_role
         super().__init__(executors, reporter)
+        self.searching_role = searching_role
     
     def execute(self, data: ExperimentData) -> ExperimentData:
-        group_field = data.ds.search_columns(self.searching_role)
-        results = []
+        # Находим поле для группировки
+        group_field = data.ds.search_columns([self.searching_role])[0]
         
-        # Применяем эксперимент к каждой группе отдельно
+        results = []
         for group, group_data in data.ds.groupby(group_field):
             result = self.one_iteration(
                 ExperimentData(group_data), 
@@ -1326,57 +1389,36 @@ class ParamsExperiment(ExperimentWithReporter):
             for class_params in self._params.values()
         ])
         
-        self._flat_params = [
-            {class_: dict(params) for class_, params in combination}
-            for combination in param_combinations
-        ]
+        self._flat_params = list(param_combinations)
     
     def execute(self, data: ExperimentData) -> ExperimentData:
         self._update_flat_params()
-        results = []
         
-        for flat_param in tqdm(self._flat_params):
+        results = []
+        for i, flat_param in enumerate(tqdm(self._flat_params)):
             t_data = ExperimentData(data.ds)
             
-            # Устанавливаем параметры для каждого Executor
+            # Применяем параметры к соответствующим Executor'ам
             for executor in self.executors:
-                executor.set_params(flat_param)
+                params_for_executor = self._extract_params_for_executor(
+                    executor, flat_param
+                )
+                if params_for_executor:
+                    executor.set_params(params_for_executor)
+                
                 t_data = executor.execute(t_data)
             
-            # Собираем отчет для этой комбинации
-            report = self.reporter.report(t_data)
-            results.append(report)
+            # Сохраняем результат итерации
+            iteration_result = self.reporter.report(t_data)
+            iteration_result["params"] = flat_param
+            results.append(iteration_result)
         
         return self._set_result(data, results)
 ```
 
-**Применение:**
-- Grid search для оптимальных параметров
-- Sensitivity analysis
-- A/A тестирование с разными random_state
+### IfParamsExperiment — параметрический поиск с условием остановки
 
-**Пример использования:**
-```python
-# A/A тест с 2000 различными разбиениями
-params_exp = ParamsExperiment(
-    executors=[
-        AASplitter(),  # Будет параметризован
-        GroupSizes(grouping_role=AdditionalTreatmentRole()),
-        TTest(grouping_role=AdditionalTreatmentRole())
-    ],
-    params={
-        AASplitter: {
-            "random_state": range(2000),  # 2000 разных разбиений
-            "control_size": [0.5]
-        }
-    },
-    reporter=AADictReporter()
-)
-```
-
-### IfParamsExperiment — параметрический поиск с ранней остановкой
-
-Расширение ParamsExperiment с возможностью остановки при выполнении условия:
+Добавляет возможность ранней остановки при достижении условия:
 
 ```python
 class IfParamsExperiment(ParamsExperiment):
@@ -1547,142 +1589,78 @@ full_pipeline = Experiment([
 Выбор пути выполнения на основе характеристик данных или промежуточных результатов.
 
 ```python
-# Адаптивный выбор теста на основе характеристик данных
-class DataCharacterizer(Executor):
-    def execute(self, data: ExperimentData) -> ExperimentData:
-        # Анализируем характеристики данных
-        is_normal = self._check_normality(data.ds)
-        sample_size = len(data.ds)
-        has_categories = self._has_categorical(data.ds)
-        
-        # Сохраняем характеристики
-        return data.set_value(
-            ExperimentDataEnum.variables,
-            self.id,
-            {
-                "is_normal": is_normal,
-                "sample_size": sample_size,
-                "has_categories": has_categories
-            }
-        )
-
-class AdaptiveTestSelector(IfExecutor):
-    def check_rule(self, data: ExperimentData) -> bool:
-        chars = data.variables[data.get_one_id(DataCharacterizer)]
-        # Выбираем подходящий тест
-        return chars["is_normal"] and chars["sample_size"] > 30
-
+# Адаптивный выбор теста
 adaptive_testing = Experiment([
-    DataCharacterizer(),
-    AdaptiveTestSelector(
-        # Для нормальных данных с большой выборкой
-        if_executor=Experiment([
-            TTest(grouping_role=TreatmentRole()),
-            PowerTesting(significance=0.95)
-        ]),
-        # Для ненормальных или малых выборок
-        else_executor=Experiment([
-            UTest(grouping_role=TreatmentRole()),
-            KSTest(grouping_role=TreatmentRole())
-        ])
-    )
+    # Подготовка
+    DataPreparation(),
+    
+    # Проверка нормальности
+    NormalityTest(),
+    
+    # Выбор теста на основе результата
+    IfExecutor(
+        condition=lambda d: d.normality_test_passed,
+        if_executor=TTest(),      # Параметрический тест
+        else_executor=UTest()      # Непараметрический тест
+    ),
+    
+    # Дальнейший анализ
+    ResultAnalyzer()
 ])
 
-# Многоуровневое ветвление для matching
-matching_pipeline = Experiment([
-    # Проверка качества данных
-    DataQualityChecker(),
+# Каскадное ветвление
+cascading_analysis = Experiment([
+    InitialTest(),
     
     IfExecutor(
-        condition=lambda d: d.quality_score > 0.9,
+        condition=lambda d: d.p_value < 0.05,
         if_executor=Experiment([
-            # Высокое качество - используем точный matching
-            MahalanobisDistance(),
-            FaissNearestNeighbors(n_neighbors=1, faiss_mode="base")
+            # Значимый эффект - глубокий анализ
+            EffectSizeCalculator(),
+            SegmentAnalysis(),
+            HeterogeneityTest()
         ]),
-        else_executor=IfExecutor(
-            condition=lambda d: d.quality_score > 0.5,
-            if_executor=Experiment([
-                # Среднее качество - используем приближенный matching
-                FaissNearestNeighbors(n_neighbors=3, faiss_mode="fast")
-            ]),
-            else_executor=Experiment([
-                # Низкое качество - используем propensity score
-                PropensityScoreMatching()
-            ])
-        )
+        else_executor=Experiment([
+            # Незначимый эффект - проверка power
+            PowerAnalysis(),
+            SampleSizeRecommendation()
+        ])
     )
 ])
 ```
 
 **Преимущества:**
-- Адаптация к характеристикам данных
-- Оптимизация производительности
-- Обработка edge cases
+- Адаптивность к данным
+- Оптимизация вычислений
+- Автоматический выбор методов
 
-#### 3. Fan-out/Fan-in паттерн — параллельное применение
+#### 3. Fan-out/Fan-in паттерн — параллельные анализы
 
-Применение разных анализов к одним данным с последующей агрегацией результатов.
+Применение разных анализов к одним данным с последующей агрегацией.
 
 ```python
-# Fan-out: применяем разные тесты ко всем метрикам
-fanout_tests = OnRoleExperiment(
-    executors=[
-        # Ветка 1: Параметрические тесты
-        Experiment([
-            TTest(grouping_role=TreatmentRole()),
-            GroupDifference(grouping_role=TreatmentRole())
-        ]),
-        
-        # Ветка 2: Непараметрические тесты  
-        Experiment([
-            KSTest(grouping_role=TreatmentRole()),
-            UTest(grouping_role=TreatmentRole())
-        ]),
-        
-        # Ветка 3: Анализ мощности
-        Experiment([
-            PowerTesting(significance=0.95, power=0.8),
-            MDEBySize()
-        ])
-    ],
-    role=TargetRole()  # Применить ко всем target метрикам
-)
-
-# Fan-in: агрегация результатов разных тестов
-class TestAggregator(Executor):
-    def execute(self, data: ExperimentData) -> ExperimentData:
-        # Собираем результаты всех тестов
-        ttest_results = data.analysis_tables[data.get_one_id(TTest)]
-        kstest_results = data.analysis_tables[data.get_one_id(KSTest)]
-        utest_results = data.analysis_tables[data.get_one_id(UTest)]
-        
-        # Агрегируем (например, голосованием)
-        aggregated = self._aggregate_by_voting([
-            ttest_results, kstest_results, utest_results
-        ])
-        
-        return data.set_value(
-            ExperimentDataEnum.analysis_tables,
-            self.id,
-            aggregated
-        )
-
-# Полный fan-out/fan-in pipeline
-ensemble_testing = Experiment([
-    fanout_tests,      # Fan-out
-    TestAggregator()   # Fan-in
-])
-
-# Параллельный анализ по сегментам
-segment_analysis = Experiment([
-    # Fan-out по разным сегментам
+# Fan-out: множественные анализы
+multi_analysis = Experiment([
+    # Подготовка
+    DataPreparation(),
+    
+    # Fan-out: разные виды анализа
+    OnRoleExperiment(
+        executors=[
+            TTest(),
+            KSTest(),
+            Chi2Test()
+        ],
+        role=TargetRole()
+    ),
+    
+    # Fan-out: анализ по сегментам
     GroupExperiment(
         executors=[
-            GroupDifference(),
-            TTest()
+            SegmentStatistics(),
+            SegmentTests()
         ],
-        searching_role=SegmentRole(),  # age_group, region, etc.
+        searching_role=SegmentRole(),
         reporter=SegmentReporter()
     ),
     
@@ -1892,72 +1870,322 @@ robust_matching = Experiment([
 - Graceful degradation
 - Адаптивность к качеству данных
 
-#### 7. Template Method паттерн — шаблонные pipeline'ы
+#### 7. Observer паттерн — мониторинг выполнения
 
-Создание переиспользуемых шаблонов экспериментов с точками расширения.
+Добавление логирования и мониторинга в процесс выполнения.
 
 ```python
-class StandardABTestTemplate(Experiment):
-    """Шаблон стандартного A/B теста"""
-    
-    def __init__(self, 
-                 custom_preprocessing: list[Executor] = None,
-                 custom_tests: list[Executor] = None,
-                 multitest_method: str = "bonferroni"):
-        
-        # Базовая предобработка
-        base_preprocessing = [
-            NaFiller(method="ffill"),
-            OutliersFilter()
-        ]
-        
-        # Добавляем кастомную предобработку
-        preprocessing = base_preprocessing + (custom_preprocessing or [])
-        
-        # Базовые тесты
-        base_tests = [
-            GroupSizes(grouping_role=TreatmentRole()),
-            GroupDifference(grouping_role=TreatmentRole()),
-            TTest(grouping_role=TreatmentRole())
-        ]
-        
-        # Добавляем кастомные тесты
-        tests = base_tests + (custom_tests or [])
-        
-        # Собираем полный pipeline
-        executors = preprocessing + tests + [
-            ABAnalyzer(multitest_method=multitest_method)
-        ]
-        
+class ObservableExperiment(Experiment):
+    def __init__(self, executors: list[Executor], observers: list[Observer] = None):
         super().__init__(executors)
+        self.observers = observers or []
+    
+    def execute(self, data: ExperimentData) -> ExperimentData:
+        for i, executor in enumerate(self.executors):
+            # Уведомляем о начале
+            for observer in self.observers:
+                observer.on_executor_start(executor, data)
+            
+            # Выполнение
+            start_time = time.time()
+            data = executor.execute(data)
+            execution_time = time.time() - start_time
+            
+            # Уведомляем о завершении
+            for observer in self.observers:
+                observer.on_executor_complete(executor, data, execution_time)
+        
+        return data
 
-# Использование шаблона
-custom_ab_test = StandardABTestTemplate(
-    custom_preprocessing=[
-        CategoryAggregator(threshold=10),
-        DummyEncoder()
-    ],
-    custom_tests=[
-        KSTest(grouping_role=TreatmentRole()),
-        PSI(grouping_role=TreatmentRole())
-    ],
-    multitest_method="fdr_bh"
+# Использование
+experiment = ObservableExperiment(
+    executors=[...],
+    observers=[
+        LoggingObserver(),
+        MetricsCollector(),
+        ProgressBar(),
+        AlertingObserver(threshold=60)  # Алерт если executor > 60 сек
+    ]
 )
 ```
 
 **Преимущества:**
-- Стандартизация процессов
-- Легкая кастомизация
-- Соблюдение best practices
+- Прозрачность выполнения
+- Сбор метрик и диагностика
+- Возможность прерывания при проблемах
 
-Эти паттерны можно комбинировать для создания сложных аналитических pipeline'ов, сохраняя при этом читаемость и поддерживаемость кода.
+### Лучшие практики при проектировании экспериментов
 
-### Принципы проектирования Experiments
+1. **Модульность** — разбивайте сложные эксперименты на логические блоки
+2. **Переиспользование** — создавайте библиотеку стандартных подэкспериментов
+3. **Валидация** — добавляйте проверки между этапами
+4. **Документирование** — используйте говорящие имена и комментарии
+5. **Тестирование** — тестируйте эксперименты на небольших данных
+6. **Версионирование** — сохраняйте версии успешных экспериментов
+7. **Мониторинг** — логируйте ключевые метрики выполнения
 
-1. **Композируемость** — Experiments можно вкладывать друг в друга
-2. **Переиспользуемость** — Общие pipeline'ы можно выделить в отдельные Experiments
-3. **Конфигурируемость** — Параметры можно менять без изменения структуры
-4. **Прозрачность** — Каждый шаг сохраняет свои результаты в ExperimentData
-5. **Расширяемость** — Легко создавать новые типы Experiments через наследование
+Слой экспериментов предоставляет мощные абстракции для построения сложных аналитических pipeline'ов, сохраняя при этом простоту и читаемость кода.
 
-Experiment Framework обеспечивает мощную и гибкую систему для построения сложных аналитических pipeline'ов, сохраняя при этом простоту использования и понимания.
+## 8. Система Reporter'ов
+
+Reporter'ы отвечают за извлечение, форматирование и представление результатов экспериментов. Они служат мостом между внутренним представлением данных в ExperimentData и форматом, удобным для пользователя или последующей обработки.
+
+### Архитектура Reporter'ов
+
+Reporter'ы работают по принципу "извлечь и отформатировать":
+
+1. **Извлекают результаты** из различных пространств имен ExperimentData
+2. **Агрегируют и структурируют** информацию согласно своей логике
+3. **Форматируют вывод** в нужном виде (dict, Dataset, HTML, PDF и т.д.)
+4. **Сохраняют семантику** — каждый Reporter знает, какие результаты и как интерпретировать
+
+### Базовый класс Reporter
+
+**Reporter** — абстрактный базовый класс для всех репортеров:
+
+**Контракт:**
+- Метод `report(data: ExperimentData)` — единая точка входа
+- Возвращает Any — конкретный формат определяется наследником
+- Не модифицирует ExperimentData — только читает данные
+- Детерминированность — одинаковые данные дают одинаковый отчет
+
+### DictReporter — универсальная основа
+
+DictReporter является фундаментальным классом для большинства Reporter'ов в HypEx. Его философия — предоставить универсальный промежуточный формат (словарь), который легко преобразовать в любой другой.
+
+#### Концепция DictReporter
+
+**Основная идея:** Все результаты экспериментов можно представить как плоский словарь с уникальными ключами.
+
+**Формат ключей:**
+```python
+# Технический формат (front=False)
+"TTest╤╤revenue" → {"p-value": 0.042, "statistic": 2.15}
+
+# User-friendly формат (front=True)
+"revenue_ttest_pvalue" → 0.042
+"revenue_ttest_statistic" → 2.15
+```
+
+**Преимущества плоской структуры:**
+- Отсутствие вложенности упрощает обработку
+- Уникальные ключи предотвращают конфликты
+- Легко конвертировать в табличный формат
+- Простая сериализация (JSON, pickle)
+
+#### Методы извлечения в DictReporter
+
+DictReporter предоставляет набор методов для извлечения разных типов результатов:
+
+- **`extract_from_one_row_dataset()`** — для скалярных результатов
+- **`_extract_from_comparators()`** — для результатов сравнений
+- **`_get_struct_dict()`** — создание структурированного словаря
+- **`_convert_dataset_to_dict()`** — конвертация Dataset в dict
+
+Каждый наследник DictReporter переопределяет метод `report()`, комбинируя эти методы извлечения для создания нужного словаря.
+
+### OnDictReporter — универсальный форматтер
+
+OnDictReporter — это паттерн Decorator для DictReporter'ов. Он позволяет преобразовать базовый словарный формат в любой другой без изменения логики извлечения.
+
+#### Архитектура форматирования
+
+```
+ExperimentData → DictReporter → dict → OnDictReporter → Любой формат
+                     ↑                         ↓
+              (извлечение)              (форматирование)
+```
+
+**Ключевая идея:** Разделение извлечения данных и их представления.
+
+#### Стандартные форматтеры
+
+**DatasetReporter** — табличное представление:
+```python
+class DatasetReporter(OnDictReporter):
+    def report(self, data: ExperimentData):
+        # Получаем базовый dict
+        dict_report = self.dict_reporter.report(data)
+        # Преобразуем в структурированную таблицу
+        return self.convert_flat_dataset(dict_report)
+```
+
+**Потенциальные форматтеры (roadmap):**
+
+**HTMLReporter** — интерактивные HTML отчеты:
+- Таблицы с сортировкой и фильтрацией
+- Графики и визуализации
+- Collapsible секции для детализации
+- Экспорт в различные форматы
+
+**PDFReporter** — профессиональные PDF отчеты:
+- Форматированные таблицы и графики
+- Executive summary на первой странице
+- Детальные приложения с методологией
+- Брендирование и стилизация
+
+**MarkdownReporter** — отчеты для документации:
+- Структурированный markdown
+- Таблицы в GFM формате
+- Встроенные графики как base64
+- Готов для вставки в wiki/confluence
+
+**JSONReporter** — машиночитаемый формат:
+- Полная сериализация результатов
+- Метаданные об эксперименте
+- Версионирование схемы
+- Поддержка streaming
+
+**ExcelReporter** — multi-sheet Excel файлы:
+- Summary на первом листе
+- Детальные результаты по листам
+- Условное форматирование
+- Встроенные формулы и графики
+
+#### Создание кастомного форматтера
+
+```python
+class CustomFormatter(OnDictReporter):
+    def __init__(self, dict_reporter: DictReporter, format_options: dict):
+        super().__init__(dict_reporter)
+        self.format_options = format_options
+    
+    def report(self, data: ExperimentData):
+        # Получаем базовый словарь
+        base_dict = self.dict_reporter.report(data)
+        
+        # Применяем кастомное форматирование
+        formatted = self.apply_formatting(base_dict)
+        
+        # Добавляем метаданные
+        formatted['metadata'] = self.extract_metadata(data)
+        
+        # Возвращаем в нужном формате
+        return self.render(formatted)
+```
+
+### Использование Reporter'ов в Experiment
+
+Reporter'ы интегрированы в систему экспериментов через класс ExperimentWithReporter.
+
+#### ExperimentWithReporter
+
+Этот класс добавляет автоматическую генерацию отчетов к экспериментам:
+
+```python
+class ExperimentWithReporter(Experiment):
+    def __init__(self, executors: list, reporter: Reporter):
+        super().__init__(executors)
+        self.reporter = reporter
+    
+    def one_iteration(self, data: ExperimentData, key: str = ""):
+        # Выполняем эксперимент
+        result_data = super().execute(data)
+        # Автоматически генерируем отчет
+        return self.reporter.report(result_data)
+```
+
+#### Специализированные эксперименты с Reporter'ами
+
+**ParamsExperiment** — всегда требует Reporter:
+- После каждой комбинации параметров генерирует отчет
+- Агрегирует отчеты всех итераций
+- Позволяет сравнить результаты разных параметров
+
+**GroupExperiment** — Reporter для каждой группы:
+- Генерирует отчет для каждой группы отдельно
+- Объединяет в общую таблицу с индексом по группам
+
+**CycledExperiment** — Reporter для каждого цикла:
+- Отчет после каждой итерации
+- Статистика по всем итерациям
+
+#### Паттерны использования
+
+**Inline reporter в эксперименте:**
+```python
+experiment = ParamsExperiment(
+    executors=[...],
+    params={...},
+    reporter=DatasetReporter(ABDictReporter())
+)
+```
+
+**Композиция репортеров:**
+```python
+base_reporter = TestDictReporter()
+formatted_reporter = DatasetReporter(base_reporter)
+
+experiment = ExperimentWithReporter(
+    executors=[...],
+    reporter=formatted_reporter
+)
+```
+
+**Множественные отчеты:**
+```python
+data = experiment.execute(initial_data)
+
+# Разные форматы из одних данных
+summary = SummaryDictReporter().report(data)
+detailed = DetailedDatasetReporter().report(data)
+visual = VisualizationReporter().report(data)
+```
+
+### Иерархия конкретных Reporter'ов
+
+HypEx предоставляет набор готовых Reporter'ов для типовых задач:
+
+#### Для статистических тестов
+- **TestDictReporter** — базовый класс для тестовых репортеров
+- **OneAADictReporter** — отчет по одному A/A тесту
+- **AADatasetReporter** — табличный отчет по A/A тестам
+- **ABDictReporter** — отчет по A/B тесту
+- **ABDatasetReporter** — табличный отчет по A/B тесту
+- **HomoDictReporter** — отчет по тесту гомогенности
+- **HomoDatasetReporter** — табличный отчет по гомогенности
+
+#### Для matching
+- **MatchingDictReporter** — базовый отчет по matching
+- **MatchingDatasetReporter** — табличный отчет по matching
+- **MatchingQualityDictReporter** — отчет по качеству matching
+- **MatchingQualityDatasetReporter** — табличный отчет по качеству
+
+#### Специальные репортеры
+- **AAPassedReporter** — определение прошедших A/A тестов
+- **AABestSplitReporter** — отчет о лучшем разбиении
+
+Каждый из этих Reporter'ов знает, какие именно результаты извлекать из ExperimentData и как их правильно интерпретировать.
+
+### Принципы проектирования Reporter'ов
+
+1. **Separation of Concerns:**
+   - Извлечение (что достать) отделено от форматирования (как показать)
+   - DictReporter отвечает за извлечение
+   - OnDictReporter отвечает за форматирование
+
+2. **Composability:**
+   - Reporter'ы можно комбинировать
+   - Один базовый reporter, множество форматов вывода
+
+3. **Reusability:**
+   - Один Reporter может использоваться в разных экспериментах
+   - Форматтеры переиспользуются для разных типов данных
+
+4. **Extensibility:**
+   - Легко добавить новый формат вывода
+   - Не нужно менять логику извлечения
+
+5. **Testability:**
+   - Reporter'ы тестируются независимо от экспериментов
+   - Форматтеры тестируются отдельно от извлечения
+
+### Преимущества архитектуры Reporter'ов
+
+1. **Гибкость представления** — один эксперимент, множество форматов вывода
+2. **Консистентность** — стандартизированные способы извлечения результатов
+3. **Масштабируемость** — легко добавлять новые форматы без изменения core
+4. **Maintainability** — изменения в форматировании не влияют на логику
+5. **User Experience** — пользователь получает результаты в удобном виде
+
+Reporter'ы обеспечивают элегантное решение проблемы представления результатов, позволяя HypEx адаптироваться под различные use cases и требования к отчетности.
