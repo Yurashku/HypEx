@@ -8,21 +8,21 @@ except ImportError:
 
 CUPAC_MODELS = {
     "linear": {
-        "pandas": LinearRegression(),
+        "pandasdataset": LinearRegression(),
         "polars": None,
     },
     "ridge": {
-        "pandas": Ridge(),
+        "pandasdataset": Ridge(),
         "polars": None,
     },
     "lasso": {
-        "pandas": Lasso(),
+        "pandasdataset": Lasso(),
         "polars": None,
     },
 }
 
 if CATBOOST_AVAILABLE:
     CUPAC_MODELS["catboost"] = {
-        "pandas": CatBoostRegressor(verbose=0),
+        "pandasdataset": CatBoostRegressor(verbose=0),
         "polars": None,
     }

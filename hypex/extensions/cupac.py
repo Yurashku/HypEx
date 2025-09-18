@@ -17,7 +17,7 @@ class CupacExtension(MLExtension):
         self,
         cupac_features: Dict[str, Sequence[str]],
         available_models: Dict[str, Any],
-        explicit_models: Sequence[str],
+        explicit_models: list[str],
         n_folds: int = 5,
         random_state: Optional[int] = None,
     ):

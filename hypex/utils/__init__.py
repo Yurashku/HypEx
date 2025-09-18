@@ -4,7 +4,7 @@ from .constants import (
                         NAME_BORDER_SYMBOL,
                         NUMBER_TYPES_LIST,
 )
-from .enums import ABNTestMethodsEnum, BackendsEnum, ExperimentDataEnum, SpaceEnum
+from .enums import ABNTestMethodsEnum, ABTestTypesEnum, BackendsEnum, ExperimentDataEnum, SpaceEnum
 from .errors import (
                         AbstractMethodError,
                         BackendTypeError,
@@ -46,6 +46,7 @@ __all__ = [
     "NAME_BORDER_SYMBOL",
     "NUMBER_TYPES_LIST",
     "ABNTestMethodsEnum",
+    "ABTestTypesEnum",
     "AbstractMethodError",
     "BackendTypeError",
     "BackendsEnum",

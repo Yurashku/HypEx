@@ -9,10 +9,7 @@ from ...utils import AbstractMethodError, FromDictTypes
 class DatasetBackendNavigation(ABC):
     @property
     def name(self) -> str:
-        class_name = self.__class__.__name__.lower()
-        if "dataset" in class_name:
-            return class_name.replace("dataset", "")
-        return class_name.replace("backend", "")
+        return str(self.__class__.__name__).lower().replace("backend", "")
 
     @property
     @abstractmethod
