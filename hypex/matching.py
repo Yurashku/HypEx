@@ -195,6 +195,7 @@ class Matching(ExperimentShell):
                 bias_estimation,
                 quality_tests,
                 faiss_mode,
+                n_neighbors,
             ),
             output=MatchingOutput(GroupExperiment if group_match else MatchingAnalyzer),
         )

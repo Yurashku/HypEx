@@ -142,14 +142,23 @@ class FaissNearestNeighbors(MLExecutor):
             )
             if t_index_field.isna().sum() > 0:
                 raise PairsNotFoundError
+            t_index_field = t_index_field.list_to_columns("indexes")
             matched_indexes = matched_indexes.append(
                 Dataset.from_dict(
                     data={
-                        "indexes": t_ds.iloc[
-                            list(map(lambda x: int(x[0]), t_index_field.get_values()))
+                        col: t_ds.iloc[
+                            list(
+                                map(
+                                    lambda x: int(x[0]),
+                                    t_index_field[col].get_values(),
+                                )
+                            )
                         ].index
+                        for col in t_index_field.columns
                     },
-                    roles={"indexes": AdditionalMatchingRole()},
+                    roles={
+                        col: AdditionalMatchingRole() for col in t_index_field.columns
+                    },
                     index=group.index,
                 )
             ).sort()
