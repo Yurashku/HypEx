@@ -1,12 +1,14 @@
 import enum
 
 
+
 @enum.unique
 class ExperimentDataEnum(enum.Enum):
     variables = "variables"
     additional_fields = "additional_fields"
     analysis_tables = "analysis_tables"
     groups = "groups"
+    ml = "ml"
 
 
 @enum.unique
@@ -34,6 +36,13 @@ class ABNTestMethodsEnum(enum.Enum):
     fdr_tsbh = "fdr_tsbh"
     fdr_tsbky = "fdr_tsbky"
     quantile = "quantile"
+
+
+@enum.unique
+class ABTestTypesEnum(enum.Enum):
+    t_test = "t-test"
+    u_test = "u-test"
+    chi2_test = "chi2-test"
 
 
 @enum.unique
