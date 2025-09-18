@@ -24,9 +24,11 @@ class MahalanobisDistance(Calculator):
         self,
         grouping_role: ABCRole | None = None,
         key: Any = "",
+        weights: dict[str, float] | None = None,
     ):
         super().__init__(key=key)
         self.grouping_role = grouping_role or GroupingRole()
+        self.weights = weights
 
     @classmethod
     def _execute_inner_function(
@@ -150,6 +152,6 @@ class MahalanobisDistance(Calculator):
             group_field=group_field,
             target_fields=target_fields,
             grouping_data=grouping_data,
-            # weights=self.weights or None,
+            weights=self.weights or None,
         )
         return self._set_value(data, compare_result)

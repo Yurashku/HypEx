@@ -75,6 +75,7 @@ class Matching(ExperimentShell):
         ) = "auto",
         faiss_mode: Literal["base", "fast", "auto"] = "auto",
         n_neighbors: int = 1,
+        weights: dict[str, float] | None = None,
     ) -> Experiment:
         """Creates an experiment configuration with specified matching parameters.
 
@@ -109,7 +110,10 @@ class Matching(ExperimentShell):
             )
         """
         distance_mapping = {
-            "mahalanobis": MahalanobisDistance(grouping_role=TreatmentRole())
+            "mahalanobis": MahalanobisDistance(
+                grouping_role=TreatmentRole(), weights=weights
+            ),
+            # "l2": L2Distance(grouping_role=TreatmentRole(), weights=weights),
         }
         test_mapping = {
             "t-test": TTest(
@@ -186,6 +190,7 @@ class Matching(ExperimentShell):
         ) = "auto",
         faiss_mode: Literal["base", "fast", "auto"] = "auto",
         n_neighbors: int = 1,
+        weights: dict[str, float] | None = None,
     ):
         super().__init__(
             experiment=self._make_experiment(
@@ -196,6 +201,7 @@ class Matching(ExperimentShell):
                 quality_tests,
                 faiss_mode,
                 n_neighbors,
+                weights,
             ),
             output=MatchingOutput(GroupExperiment if group_match else MatchingAnalyzer),
         )

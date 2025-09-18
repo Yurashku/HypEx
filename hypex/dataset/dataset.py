@@ -670,9 +670,9 @@ class Dataset(DatasetBase):
         t_roles = {c: self.roles[c] for c in t_data.columns if c in self.roles.keys()}
         return Dataset(roles=t_roles, data=t_data)
 
-    def dot(self, other: [Dataset, ndarray]) -> Dataset:
+    def dot(self, other: Dataset | ndarray) -> Dataset:
         return Dataset(
-            roles=other.roles,
+            roles=deepcopy(other.roles) if isinstance(other, Dataset) else {},
             data=self.backend.dot(
                 other.backend if isinstance(other, Dataset) else other
             ),

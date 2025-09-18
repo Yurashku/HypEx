@@ -267,7 +267,8 @@ class Bias(GroupOperator):
     def calc_coefficients(X: Dataset, Y: Dataset) -> list[float]:
         X_l = Dataset.create_empty(roles={"temp": InfoRole()}, index=X.index).fillna(1)
         X = X_l.append(X, axis=1).data.values
-        return np.linalg.lstsq(X, Y.data.values, rcond=-1)[0][1:]
+        res = np.linalg.lstsq(X, Y.data.values, rcond=-1)[0][1:]
+        return res
 
     @staticmethod
     def calc_bias(
@@ -287,6 +288,7 @@ class Bias(GroupOperator):
         features_fields: list[str] | None = None,
         **kwargs,
     ) -> dict:
+        print(test_data.data.head())
         if target_fields is None or features_fields is None or test_data is None:
             raise NoneArgumentError(
                 ["target_fields", "features_fields", "test_data"], "bias_estimation"
