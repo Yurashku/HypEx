@@ -214,106 +214,53 @@ ds_merged = ds1.merge(ds2, on='id')
 ExperimentData — это расширенный контейнер, который хранит не только исходные данные, но и все промежуточные результаты,
 метаданные и состояние эксперимента.
 
-#### Структура ExperimentData
+#### Архитектура ExperimentData
+
+**Пространства имен:**
 
 ```python
-class ExperimentData:
-    # Основные данные
-    _data: Dataset  # Исходный датасет
-
-    # Дополнительные поля (новые колонки, созданные Executor'ами)
-    additional_fields: Dataset
-
-    # Переменные (скалярные значения, метрики)
-    variables: dict[str, dict[str, Any]]
-
-    # Группы (разбиение данных на подгруппы)
-    groups: dict[str, dict[str, Dataset]]
-
-    # Таблицы анализа (результаты тестов и анализов)
-    analysis_tables: dict[str, Dataset]
+class ExperimentDataEnum:
+    analysis_tables = "analysis_tables"  # Результаты Calculator'ов
+    variables = "variables"  # Переменные и настройки
+    additional_fields = "additional_fields"  # Дополнительные колонки данных
 ```
 
-#### Пространства имен (ExperimentDataEnum)
+**Компоненты:**
 
-ExperimentData организует данные в четыре пространства имен:
+- **ds: Dataset** — основные данные эксперимента
+- **analysis_tables: dict** — результаты анализов по ID Executor'ов
+- **variables: dict** — переменные и метаданные
+- **additional_fields: dict** — дополнительные поля данных
 
-1. **additional_fields** — новые признаки и колонки
-    - Результаты encoding'а
-    - Вычисленные features
-    - Matched индексы
-
-2. **variables** — скалярные значения и словари
-    - Параметры моделей
-    - Вычисленные константы
-    - Метрики качества
-
-3. **groups** — сгруппированные данные
-    - Разбиение на control/test
-    - Подгруппы для анализа
-    - Результаты стратификации
-
-4. **analysis_tables** — результаты анализов
-    - Результаты статистических тестов
-    - Таблицы сравнений
-    - Агрегированные метрики
-
-#### Взаимодействие с Executors
-
-Каждый Executor работает с ExperimentData по следующему паттерну:
+#### Основные операции ExperimentData
 
 ```python
-def execute(self, data: ExperimentData) -> ExperimentData:
-    # 1. Извлечение необходимых данных
-    input_data = data.ds  # или data.additional_fields, data.groups и т.д.
+# Создание
+experiment_data = ExperimentData(dataset)
 
-    # 2. Выполнение операции
-    result = self._inner_function(input_data)
+# Сохранение результата Executor'а
+experiment_data.set_value(
+    space=ExperimentDataEnum.analysis_tables,
+    executor_id="TTest╤reliability 0.05╤",
+    value=test_results
+)
 
-    # 3. Сохранение результата в нужное пространство имен
-    return data.set_value(
-        space=ExperimentDataEnum.analysis_tables,
-        executor_id=self.id,
-        value=result
-    )
+# Получение результата по ID
+result = experiment_data.analysis_tables["TTest╤reliability 0.05╤"]
+
+# Поиск ID'шников по типу Executor'а
+ids = experiment_data.get_ids(TTest)
+
+# Добавление дополнительных полей
+experiment_data.add_fields({'predicted_score': prediction_column})
 ```
 
-#### Система идентификаторов
+### Принципы работы с данными
 
-Каждый Executor имеет уникальный ID, построенный по схеме:
-
-```
-ClassName╤ParamsHash╤Key
-```
-
-Где:
-
-- `ClassName` — имя класса Executor'а
-- `ParamsHash` — хеш параметров
-- `Key` — дополнительный ключ (например, имя колонки)
-
-Это позволяет:
-
-- Избегать повторных вычислений
-- Находить результаты конкретных Executor'ов
-- Строить зависимости между компонентами
-- Восстанавливать состояние Executor
-
-### Поток преобразования данных
-
-```
-Dataset → ExperimentData → [Executor1] → ExperimentData' → [Executor2] → ExperimentData''
-                              ↓                                ↓
-                        Модификация                      Модификация
-                     additional_fields               analysis_tables
-```
-
-Каждый Executor может:
-
-- Читать из любого пространства имен
-- Писать в одно или несколько пространств
-- Использовать результаты предыдущих Executor'ов
-- Не влиять на исходные данные (immutability)
+1. **Immutability**: ExperimentData копируется при необходимости изменения основного Dataset
+2. **Namespace separation**: Разные типы результатов хранятся в разных пространствах имен
+3. **ID-based access**: Результаты индексируются по уникальным ID Executor'ов
+4. **Rich metadata**: Поддержка метаданных и переменных для каждого эксперимента
 
 ## 4. Ядро системы: Executor Framework
 
@@ -378,170 +325,64 @@ class Calculator(Executor, ABC):
         pass
 ```
 
-**Назначение:** Разделение логики вычисления от логики работы с ExperimentData. Это позволяет:
+**Назначение:** Разделение логики вычисления от логики работы с ExperimentData.
 
-- Использовать вычисления отдельно от эксперимента
-- Тестировать логику изолированно
-- Переиспользовать код в разных контекстах
-
-**Основные подклассы Calculator:**
-
-```
-Calculator
-├── Comparator — сравнение групп и статистические тесты
-│   ├── GroupDifference, GroupSizes, PSI
-│   ├── StatHypothesisTesting (TTest, KSTest, UTest, Chi2Test)
-│   └── PowerTesting (MDEBySize)
-├── Transformer — преобразование данных
-│   ├── Filters (ConstFilter, CorrFilter, CVFilter, NanFilter, OutliersFilter)
-│   ├── NaFiller — заполнение пропусков
-│   ├── CategoryAggregator — агрегация категорий
-│   └── Shuffle — перемешивание данных
-├── Encoder — кодирование категориальных переменных
-│   └── DummyEncoder — one-hot encoding
-├── GroupOperator — операции над группами
-│   ├── SMD — Standardized Mean Difference
-│   ├── Bias — оценка смещения
-│   └── MatchingMetrics — метрики matching'а
-├── MLExecutor — машинное обучение
-│   └── FaissNearestNeighbors — поиск ближайших соседей
-└── Splitter — разделение на группы
-    ├── AASplitter — базовое разделение для A/A теста
-    └── AASplitterWithStratification — со стратификацией
-```
-
-#### 2. IfExecutor — условное выполнение
-
-IfExecutor реализует паттерн условного выполнения:
+#### 2. IfExecutor — условная ветвь
 
 ```python
-class IfExecutor(Executor, ABC):
-    def __init__(self,
-                 if_executor: Executor | None = None,
-                 else_executor: Executor | None = None):
+class IfExecutor(Executor):
+    def __init__(self, if_executor: Executor, else_executor: Executor = None):
         self.if_executor = if_executor
         self.else_executor = else_executor
 
-    @abstractmethod
-    def check_rule(self, data) -> bool:
-        """Проверка условия"""
+    def check_rule(self, data: ExperimentData) -> bool:
+        """Логика принятия решения"""
         pass
 
     def execute(self, data: ExperimentData) -> ExperimentData:
         if self.check_rule(data):
-            return self.if_executor.execute(data) if self.if_executor else data
-        else:
-            return self.else_executor.execute(data) if self.else_executor else data
+            return self.if_executor.execute(data)
+        elif self.else_executor:
+            return self.else_executor.execute(data)
+        return data
 ```
 
-**Назначение:** Ветвление логики выполнения на основе условий.
+**Назначение:** Условное выполнение на основе состояния данных.
 
-**Пример использования — IfAAExecutor:**
+#### 3. MLExecutor — машинное обучение ветвь
 
 ```python
-class IfAAExecutor(IfExecutor):
-    def check_rule(self, data) -> bool:
-        # Проверяет, прошел ли A/A тест
-        score_table = data.analysis_tables[...]
-        feature_pass = sum([...])  # Подсчет прошедших тестов
-        return feature_pass >= 1
+class MLExecutor(Executor, ABC):
+    def fit(self, X: Dataset, Y: Dataset) -> 'MLExecutor':
+        """Обучение модели"""
+        pass
+
+    def predict(self, X: Dataset) -> Dataset:
+        """Предсказания"""
+        pass
+
+    def score(self, X: Dataset, Y: Dataset) -> float:
+        """Метрика качества"""
+        pass
 ```
 
-#### 3. Прямые наследники — Analyzers
+**Назначение:** Стандартный интерфейс для ML операций.
 
-Analyzers наследуются напрямую от Executor и выполняют сложный анализ результатов:
+### Система ID
+
+Каждый Executor имеет уникальный ID, состоящий из:
+
+```
+ClassName╤ParamsHash╤Key
+```
+
+**Примеры:**
 
 ```python
-# Прямые наследники Executor
-├── OneAAStatAnalyzer — анализ
-статистики
-одного
-A / A
-теста
-├── AAScoreAnalyzer — оценка
-качества
-A / A
-тестов
-и
-выбор
-лучшего
-├── ABAnalyzer — анализ
-A / B
-теста
-с
-коррекцией
-множественного
-тестирования
-└── MatchingAnalyzer — анализ
-качества
-matching
-'а
+TTest() → "TTest╤╤"
+TTest(reliability=0.01) → "TTest╤rel 0.01╤"
+TTest(key="revenue") → "TTest╤╤revenue"
 ```
-
-**Особенности Analyzers:**
-
-- Работают с результатами других Executor'ов
-- Агрегируют и анализируют множественные результаты
-- Принимают сложные решения на основе статистики
-
-### Паттерн "Цепочка ответственности"
-
-Executor'ы образуют цепочку, где каждый:
-
-1. Получает ExperimentData от предыдущего
-2. Выполняет свою операцию
-3. Передает обогащенный ExperimentData следующему
-
-```python
-# Пример цепочки для A/B теста
-chain = [
-    GroupSizes(),  # Подсчет размеров групп
-    GroupDifference(),  # Вычисление разницы между группами
-    TTest(),  # T-тест
-    KSTest(),  # KS-тест
-    ABAnalyzer()  # Анализ и коррекция множественного тестирования
-]
-
-# Выполнение цепочки
-data = ExperimentData(dataset)
-for executor in chain:
-    data = executor.execute(data)
-```
-
-### Система идентификации и хеширования
-
-Каждый Executor имеет уникальный ID вида: `ClassName╤ParamsHash╤Key`
-
-**Генерация ParamsHash:**
-
-```python
-def _generate_params_hash(self):
-    # Для AASplitter
-    hash_parts = []
-    if self.control_size != 0.5:
-        hash_parts.append(f"cs {self.control_size}")
-    if self.random_state is not None:
-        hash_parts.append(f"rs {self.random_state}")
-    self._params_hash = "|".join(hash_parts)
-```
-
-**Восстановление из ID:**
-
-```python
-@classmethod
-def build_from_id(cls, executor_id: str):
-    """Восстанавливает Executor из его ID"""
-    splitted_id = executor_id.split(ID_SPLIT_SYMBOL)
-    result = cls()
-    result.init_from_hash(splitted_id[1])  # ParamsHash
-    return result
-```
-
-Это позволяет:
-
-- **Кеширование** — не выполнять повторно одинаковые операции
-- **Трассировка** — понимать, какой Executor создал какой результат
-- **Воспроизводимость** — восстанавливать состояние из ID
 
 ### Жизненный цикл Executor
 
@@ -609,7 +450,171 @@ class MyCustomTest(StatHypothesisTesting):
 - **Расширяемость** — легко добавлять новую функциональность
 - **Тестируемость** — каждый компонент можно тестировать отдельно
 
-## 5. Слой вычислений: Comparators, Transformers, Operators
+## 5. Extension Framework
+
+### Концепция Extension'ов
+
+Extension'ы в HypEx представляют собой систему для инкапсуляции backend-специфичных вычислений, которая обеспечивает работу Calculator'ов с различными типами данных (pandas, Spark, и другими) через единый интерфейс.
+
+#### Ключевое архитектурное разделение
+
+**Backend-агностичность vs Backend-специфичность** — это основной принцип разделения ответственности в HypEx:
+
+**Calculator'ы (Backend-агностичные):**
+- Работают исключительно через Dataset API
+- Не зависят от конкретной реализации backend'а
+- Делегируют backend-специфичные вычисления Extension'ам
+- Фокусируются на бизнес-логике анализа
+
+**Extension'ы (Backend-специфичные):**
+- Инкапсулируют детали работы с конкретными технологиями
+- Предоставляют оптимизированные реализации для разных backend'ов
+- Изолируют внешние зависимости (numpy, scipy, sklearn и т.д.)
+
+### Архитектура Extension'ов
+
+```python
+class Extension(ABC):
+    def calc(self, data: Dataset, **kwargs) -> Dataset:
+        """Единая точка входа"""
+        backend_type = data.backend.__class__.__name__
+        
+        if backend_type == "PandasBackend":
+            return self._calc_pandas(data, **kwargs)
+        elif backend_type == "SparkBackend":
+            return self._calc_spark(data, **kwargs)
+        else:
+            raise NotImplementedError(f"Backend {backend_type} not supported")
+
+    @abstractmethod
+    def _calc_pandas(self, data: Dataset, **kwargs) -> Dataset:
+        """Реализация для pandas"""
+        pass
+
+    def _calc_spark(self, data: Dataset, **kwargs) -> Dataset:
+        """Реализация для Spark (опционально)"""
+        raise NotImplementedError("Spark backend not implemented")
+```
+
+### Примеры Extension'ов
+
+#### StatisticalExtension — статистические вычисления
+
+```python
+class TTestExtension(Extension):
+    def _calc_pandas(self, data: Dataset, grouping_col: str, target_col: str) -> Dataset:
+        """Pandas реализация t-теста"""
+        from scipy import stats
+        
+        groups = data.df.groupby(grouping_col)[target_col]
+        group1, group2 = [group.values for name, group in groups]
+        
+        statistic, p_value = stats.ttest_ind(group1, group2)
+        
+        return Dataset.from_dict({
+            "statistic": statistic,
+            "p-value": p_value
+        })
+
+    def _calc_spark(self, data: Dataset, grouping_col: str, target_col: str) -> Dataset:
+        """Spark реализация через SQL"""
+        # Реализация через Spark SQL для больших данных
+        spark_df = data.backend.df
+        # ... Spark-специфичная логика
+```
+
+#### MLExtension — машинное обучение
+
+```python
+class CholeskyExtension(Extension):
+    def _calc_pandas(self, data: Dataset, features: list) -> Dataset:
+        """Разложение Холецкого для pandas"""
+        import numpy as np
+        
+        matrix = data.df[features].values
+        cholesky = np.linalg.cholesky(matrix)
+        
+        return Dataset(
+            data=pd.DataFrame(cholesky, columns=features),
+            roles={col: FeatureRole() for col in features}
+        )
+
+    def _calc_spark(self, data: Dataset, features: list) -> Dataset:
+        """Spark ML реализация"""
+        from pyspark.ml.linalg import Vectors, Matrices
+        # ... Spark ML логика
+```
+
+### Интеграция с Calculator'ами
+
+Calculator'ы используют Extension'ы как делегаты:
+
+```python
+class TTest(Comparator):
+    extension = TTestExtension()  # Класс-атрибут
+
+    @classmethod
+    def _inner_function(cls, data: Dataset, test_data: Dataset) -> Dataset:
+        # Делегируем вычисления Extension'у
+        return cls.extension.calc(
+            data=data,
+            grouping_col=cls._get_grouping_column(data),
+            target_col=cls._get_target_column(test_data)
+        )
+```
+
+### Жизненный цикл Extension'ов
+
+#### 1. Инициализация и выбор backend'а
+
+```python
+# При вызове Extension'а происходит автоматический выбор реализации
+extension = CholeskyExtension()
+
+# Extension анализирует тип backend'а Dataset'а
+pandas_dataset = Dataset(data=pd.DataFrame(...), roles=...)
+result = extension.calc(pandas_dataset)  # Вызовет _calc_pandas()
+
+# Для другого backend'а автоматически выберется другая реализация
+# spark_dataset = Dataset(data=spark_df, roles=...)
+# result = extension.calc(spark_dataset)  # Вызовет _calc_spark()
+```
+
+#### 2. Изоляция зависимостей
+
+```python
+class ScipyExtension(Extension):
+    def _calc_pandas(self, data: Dataset, **kwargs) -> Dataset:
+        try:
+            from scipy import stats  # Импорт только при использовании
+            # ... логика с scipy
+        except ImportError:
+            raise ImportError("scipy required for this operation")
+```
+
+### Преимущества Extension Framework
+
+#### 1. Архитектурная чистота
+
+- **Четкое разделение ответственности:** Calculator'ы для логики, Extension'ы для реализации
+- **Backend-агностичность:** Бизнес-логика не зависит от технических деталей
+- **Изоляция зависимостей:** Внешние библиотеки не "протекают" в основной код
+
+#### 2. Производительность и масштабируемость
+
+- **Автоматические оптимизации:** Система автоматически выбирает лучшую реализацию
+- **Поддержка разных backend'ов:** pandas, Spark, Dask без изменения бизнес-логики
+- **Ленивые вычисления:** Некоторые Extension'ы могут использовать ленивые вычисления
+
+#### 3. Гибкость и расширяемость
+
+- **Простое добавление backend'ов:** Новые backend'ы добавляются через Extension'ы
+- **Модульность:** Extension'ы можно переиспользовать и комбинировать
+- **Эволюция технологий:** Поддержка новых библиотек через Extension'ы
+
+Extension Framework является ключевым архитектурным решением HypEx, которое обеспечивает баланс между простотой использования и техническими возможностями. Он позволяет Calculator'ам оставаться backend-агностичными, при этом используя мощь специализированных библиотек для каждого типа данных.
+
+## 6. Слой вычислений: Comparators, Transformers, Operators
 
 Слой вычислений содержит конкретные реализации Calculator'ов, каждая из которых специализируется на определенном типе
 операций. Все они следуют паттерну разделения вычислительной логики от работы с ExperimentData.
@@ -619,279 +624,84 @@ class MyCustomTest(StatHypothesisTesting):
 Comparators отвечают за сравнение групп и проведение статистических тестов. Они имеют сложную иерархию и богатую
 функциональность.
 
-#### Архитектура Comparator
+#### Иерархия Comparators
 
 ```python
-class Comparator(Calculator, ABC):
-    def __init__(self,
-                 compare_by: Literal["groups", "columns", "columns_in_groups", "cross"],
-                 grouping_role: ABCRole = GroupingRole(),
-                 target_roles: ABCRole | list[ABCRole] = TargetRole(),
-                 baseline_role: ABCRole = PreTargetRole()):
-        self.compare_by = compare_by
-        self.grouping_role = grouping_role
-        self.target_roles = target_roles
-        self.baseline_role = baseline_role
+Comparator (abstract)
+├── StatHypothesisTesting — статистические тесты
+│   ├── TTest — t-тест для сравнения средних
+│   ├── KSTest — тест Колмогорова-Смирнова для распределений
+│   ├── Chi2Test — хи-квадрат для категориальных переменных
+│   └── UTest — тест Манна-Уитни (непараметрический)
+├── Difference — вычисление разностей
+│   ├── GroupDifference — разности между группами
+│   └── RelativeDifference — относительные изменения
+└── Correlation — корреляционный анализ
+    ├── PearsonCorrelation — корреляция Пирсона
+    └── SpearmanCorrelation — ранговая корреляция
 ```
 
-**Режимы сравнения (compare_by):**
+#### Система ролей в Comparators
 
-#### Режим "groups" — сравнение между группами
+Comparators автоматически определяют, какие колонки сравнивать, на основе ролей:
 
-Самый распространенный режим для A/B тестов. Сравнивает одну и ту же метрику между разными группами (control vs test).
+- **TreatmentRole / GroupingRole**: Колонки для разбиения на группы
+- **TargetRole**: Метрики для сравнения
+- **FeatureRole**: Дополнительные признаки для анализа
+
+#### Примеры Comparators
+
+**TTest** — сравнение средних значений:
 
 ```python
-# Данные:
-# | user_id | group   | revenue | retention |
-# |---------|---------|---------|-----------|
-# | 1       | control | 100     | 1         |
-# | 2       | test    | 150     | 1         |
-# | 3       | control | 80      | 0         |
-# | 4       | test    | 120     | 1         |
+class TTest(StatHypothesisTesting):
+    def __init__(self, reliability: float = 0.05):
+        self.reliability = reliability
 
-comparator = TTest(
-    compare_by="groups",
-    grouping_role=TreatmentRole(),  # группировка по "group"
-    target_roles=TargetRole()  # анализ "revenue" и "retention"
-)
-
-# Результат:
-# Для revenue: сравнение control_revenue vs test_revenue
-# Для retention: сравнение control_retention vs test_retention
+    @classmethod
+    def _inner_function(cls, data: Dataset, test_data: Dataset) -> Dataset:
+        # Использует TTestExtension для backend-специфичных вычислений
+        return cls.extension.calc(data, test_data, reliability=cls.reliability)
 ```
 
-#### Режим "columns" — сравнение колонок между собой
-
-Сравнивает разные метрики внутри всего датасета. Полезно для анализа корреляций или изменений между pre/post периодами.
+**KSTest** — сравнение распределений:
 
 ```python
-# Данные:
-# | user_id | pre_revenue | post_revenue | pre_clicks | post_clicks |
-# |---------|-------------|--------------|------------|-------------|
-# | 1       | 100         | 150          | 10         | 15          |
-# | 2       | 80          | 90           | 8          | 12          |
-
-comparator = GroupDifference(
-    compare_by="columns",
-    baseline_role=PreTargetRole(),  # baseline: "pre_revenue", "pre_clicks"
-    target_roles=TargetRole()  # сравнить с: "post_revenue", "post_clicks"
-)
-
-# Результат:
-# Сравнение pre_revenue vs post_revenue (для всех пользователей)
-# Сравнение pre_clicks vs post_clicks (для всех пользователей)
-```
-
-#### Режим "columns_in_groups" — сравнение колонок внутри каждой группы
-
-Комбинация первых двух режимов. Сравнивает разные метрики, но отдельно для каждой группы.
-
-```python
-# Данные:
-# | user_id | group   | pre_revenue | post_revenue |
-# |---------|---------|-------------|--------------|
-# | 1       | control | 100         | 110          |
-# | 2       | test    | 100         | 150          |
-
-comparator = GroupDifference(
-    compare_by="columns_in_groups",
-    grouping_role=TreatmentRole(),  # группировка по "group"
-    baseline_role=PreTargetRole(),  # baseline: "pre_revenue"
-    target_roles=TargetRole()  # сравнить с: "post_revenue"
-)
-
-# Результат:
-# control: сравнение pre_revenue vs post_revenue
-# test: сравнение pre_revenue vs post_revenue
-```
-
-#### Режим "cross" — перекрестное сравнение
-
-Самый сложный режим. Сравнивает изменения между колонками в разных группах. Используется для difference-in-differences
-анализа.
-
-```python
-comparator = GroupDifference(
-    compare_by="cross",
-    grouping_role=TreatmentRole(),
-    baseline_role=PreTargetRole(),
-    target_roles=TargetRole()
-)
-
-# Сравнивает:
-# (test_post - test_pre) vs (control_post - control_pre)
-```
-
-**Применение режимов:**
-
-- **"groups"** — классические A/B тесты, сравнение метрик между группами
-- **"columns"** — анализ изменений во времени, pre/post анализ
-- **"columns_in_groups"** — гетерогенные эффекты, анализ по сегментам
-- **"cross"** — каузальная инференция, DiD анализ
-
-#### Базовые метрики (GroupDifference, GroupSizes)
-
-**GroupDifference** вычисляет разницу между группами:
-
-```python
-class GroupDifference(Comparator):
-    def _inner_function(cls, data: Dataset, test_data: Dataset) -> dict:
-        control_mean = data.mean()
-        test_mean = test_data.mean()
-        return {
-            "control mean": control_mean,
-            "test mean": test_mean,
-            "difference": test_mean - control_mean,
-            "difference %": (test_mean / control_mean - 1) * 100
-        }
-```
-
-**GroupSizes** подсчитывает размеры групп:
-
-```python
-class GroupSizes(Comparator):
-    def _inner_function(cls, data: Dataset, test_data: Dataset) -> dict:
-        size_a = len(data)
-        size_b = len(test_data)
-        return {
-            "control size": size_a,
-            "test size": size_b,
-            "control size %": (size_a / (size_a + size_b)) * 100,
-            "test size %": (size_b / (size_a + size_b)) * 100
-        }
-```
-
-#### Статистические тесты (StatHypothesisTesting)
-
-Абстрактный класс StatHypothesisTesting добавляет концепцию статистической значимости:
-
-```python
-class StatHypothesisTesting(Comparator, ABC):
-    def __init__(self, reliability: float = 0.05, **kwargs):
-        self.reliability = reliability  # Уровень значимости
-        super().__init__(**kwargs)
-```
-
-**Конкретные реализации:**
-
-1. **TTest** — t-тест Стьюдента для нормальных распределений
-2. **KSTest** — тест Колмогорова-Смирнова для любых распределений
-3. **UTest** — U-тест Манна-Уитни для ненормальных распределений
-4. **Chi2Test** — хи-квадрат тест для категориальных переменных
-
-Каждый тест возвращает стандартизированный результат:
-
-```python
-{
-    "p-value": 0.042,
-    "statistic": 2.15,
-    "pass": True  # p-value < reliability
-}
-```
-
-#### Специализированные метрики
-
-**PSI (Population Stability Index)** — измеряет стабильность распределения:
-
-```python
-class PSI(Comparator):
-    def _inner_function(cls, data: Dataset, test_data: Dataset) -> dict:
-        # Разбиение на бакеты и вычисление PSI
-        psi = sum((y - x) * np.log(y / x) for x, y in zip(data_psi, test_data_psi))
-        return {"PSI": psi}
-```
-
-**MahalanobisDistance** — вычисляет расстояние Махаланобиса:
-
-```python
-class MahalanobisDistance(Calculator):
-    def _inner_function(cls, data: Dataset, test_data: Dataset) -> dict:
-        # Вычисление ковариационной матрицы
-        cov = (data.cov() + test_data.cov()) / 2
-        # Преобразование Холецкого и вычисление расстояния
-        cholesky = CholeskyExtension().calc(cov)
-        mahalanobis_transform = InverseExtension().calc(cholesky)
-        y_control = data.dot(mahalanobis_transform.transpose())
-        y_test = test_data.dot(mahalanobis_transform.transpose())
-        return {"control": y_control, "test": y_test}
+class KSTest(StatHypothesisTesting):
+    @classmethod
+    def _inner_function(cls, data: Dataset, test_data: Dataset) -> Dataset:
+        # Тест на различие распределений между группами
+        return cls.extension.calc(data, test_data, test_type="two_sample")
 ```
 
 ### Transformers: Преобразование данных
 
-Transformers изменяют сам Dataset (в отличие от других Calculator'ов, которые только вычисляют результаты). Они работают
-с копией данных для обеспечения immutability.
+Transformers изменяют данные, возвращая модифицированную копию Dataset.
 
-#### Базовый класс Transformer
+#### Архитектура Transformers
 
 ```python
-class Transformer(Calculator, ABC):
-    @property
-    def _is_transformer(self) -> bool:
-        return True  # Маркер для Experiment
-
+class Transformer(Calculator):
     def execute(self, data: ExperimentData) -> ExperimentData:
-        # Создает копию и модифицирует данные
-        return data.copy(data=self.calc(data=data.ds))
+        # Копируем данные для безопасного изменения
+        new_data = ExperimentData(self.calc(data.ds))
+        # Переносим метаданные
+        new_data.copy_metadata_from(data)
+        return new_data
+
+    def calc(self, data: Dataset) -> Dataset:
+        target_cols = self._get_target_columns(data)
+        return self._inner_function(data, target_cols, **self.params)
 ```
 
-#### Фильтры данных
+#### Примеры Transformers
 
-Фильтры изменяют роли колонок или удаляют строки/колонки:
-
-**ConstFilter** — фильтрует константные колонки:
-
-```python
-class ConstFilter(Transformer):
-    def __init__(self, threshold: float = 0.95):
-        self.threshold = threshold
-
-    def _inner_function(data: Dataset, target_cols, threshold) -> Dataset:
-        for column in target_cols:
-            value_counts = data[column].value_counts(normalize=True)
-            if value_counts.iloc[0] > threshold:
-                data.roles[column] = InfoRole()  # Понижение роли
-        return data
-```
-
-**CorrFilter** — удаляет коррелированные признаки:
-
-```python
-class CorrFilter(Transformer):
-    def _inner_function(data: Dataset, threshold: float = 0.8) -> Dataset:
-        corr_matrix = data.corr()
-        # Находим пары с высокой корреляцией
-        for col1, col2 in high_corr_pairs:
-            if abs(corr_matrix[col1][col2]) > threshold:
-                data.roles[col2] = InfoRole()  # Понижаем роль второго
-        return data
-```
-
-**OutliersFilter** — удаляет выбросы:
-
-```python
-class OutliersFilter(Transformer):
-    def __init__(self,
-                 lower_percentile: float = 0.05,
-                 upper_percentile: float = 0.95):
-        self.lower_percentile = lower_percentile
-        self.upper_percentile = upper_percentile
-
-    def _inner_function(data: Dataset, target_cols, lower, upper) -> Dataset:
-        for col in target_cols:
-            q_low = data[col].quantile(lower)
-            q_high = data[col].quantile(upper)
-            data = data[(data[col] >= q_low) & (data[col] <= q_high)]
-        return data
-```
-
-#### Обработка пропусков и категорий
-
-**NaFiller** — заполнение пропущенных значений:
+**NaFiller** — заполнение пропусков:
 
 ```python
 class NaFiller(Transformer):
-    def __init__(self, method: str = "ffill"):
-        self.method = method  # 'ffill', 'bfill', 'mean', 'median', etc.
+    def __init__(self, method: str = "mean"):
+        self.method = method
 
     def _inner_function(data: Dataset, target_cols, method) -> Dataset:
         if method in ['ffill', 'bfill']:
@@ -952,579 +762,40 @@ class DummyEncoder(Encoder):
 GroupOperators выполняют специализированные операции над группами данных, часто используемые в matching и causal
 inference.
 
-**SMD (Standardized Mean Difference)** — стандартизированная разница средних:
+#### Примеры GroupOperators
+
+**SMD (Standardized Mean Difference)** — стандартизированная разность средних:
 
 ```python
 class SMD(GroupOperator):
-    def _inner_function(data: Dataset, test_data: Dataset) -> float:
-        mean_diff = data.mean() - test_data.mean()
-        pooled_std = np.sqrt((data.var() + test_data.var()) / 2)
-        return mean_diff / pooled_std
+    def _inner_function(data: Dataset, control_data: Dataset, treatment_data: Dataset) -> Dataset:
+        # Вычисляет Cohen's d для каждого признака
+        results = []
+        for col in data.columns:
+            mean_diff = treatment_data[col].mean() - control_data[col].mean()
+            pooled_std = np.sqrt((treatment_data[col].var() + control_data[col].var()) / 2)
+            smd = mean_diff / pooled_std
+            results.append({"feature": col, "smd": smd})
+        
+        return Dataset.from_records(results)
 ```
 
-**Bias** — оценка смещения для matching:
+**Bias** — оценка смещения после matching:
 
 ```python
 class Bias(GroupOperator):
-    def _inner_function(data: Dataset, matched_data: Dataset) -> dict:
-        # Оценка качества matching через смещение
-        bias = (matched_data.mean() - data.mean()) / data.std()
-        return {
-            "bias": bias,
-            "bias_reduced": abs(bias) < 0.1  # Порог 10%
-        }
+    def _inner_function(data: Dataset, matched_indices) -> Dataset:
+        # Оценивает качество балансировки после matching
+        # Возвращает метрики bias по каждому признаку
 ```
 
-**MatchingMetrics** — метрики качества matching:
-
-```python
-class MatchingMetrics(GroupOperator):
-    def __init__(self, metric: str = "ate"):
-        self.metric = metric  # 'ate', 'att', 'atc'
-
-    def _inner_function(data: Dataset, matched_indices: Dataset) -> dict:
-        if self.metric == "ate":  # Average Treatment Effect
-            effect = matched_treatment.mean() - matched_control.mean()
-        elif self.metric == "att":  # Average Treatment on Treated
-            effect = treated.mean() - matched_control_for_treated.mean()
-        # ... другие метрики
-        return {"effect": effect, "se": standard_error}
-```
-
-### Splitters: Разделение данных
-
-Splitters разделяют данные на группы для экспериментов.
-
-#### AASplitter — базовое разделение
-
-```python
-class AASplitter(Calculator):
-    def __init__(self,
-                 control_size: float = 0.5,
-                 random_state: int = None,
-                 sample_size: float = None):  # Доля от общих данных
-        self.control_size = control_size
-        self.random_state = random_state
-        self.sample_size = sample_size
-
-    def _inner_function(data: Dataset, control_size, random_state, sample_size) -> list[str]:
-        # Сэмплирование если нужно
-        if sample_size:
-            data = data.sample(frac=sample_size, random_state=random_state)
-
-        # Разделение на control/test
-        n_control = int(len(data) * control_size)
-        indices = data.sample(frac=1, random_state=random_state).index
-
-        split = pd.Series("test", index=data.index)
-        split[indices[:n_control]] = "control"
-
-        return split.tolist()
-```
-
-#### AASplitterWithStratification — стратифицированное разделение
-
-```python
-class AASplitterWithStratification(AASplitter):
-    def _inner_function(data: Dataset, control_size, random_state, grouping_fields) -> Dataset:
-        if not grouping_fields:
-            return super()._inner_function(data, control_size, random_state)
-
-        # Разделение внутри каждой страты
-        result = []
-        for group, group_data in data.groupby(grouping_fields):
-            split = super()._inner_function(group_data, control_size, random_state)
-            result.extend(split)
-
-        return Dataset.from_dict({"split": result}, roles={"split": TreatmentRole()})
-```
-
-### Принципы проектирования Calculator'ов
-
-1. **Разделение вычисления и контекста:**
-    - `_inner_function` — чистая логика вычисления
-    - `execute` — работа с ExperimentData
-    - `calc` — статический интерфейс для использования вне экспериментов
-
-2. **Унифицированный результат:**
-    - Всегда возвращают Dataset или dict
-    - Результаты имеют стандартную структуру
-    - Роли определяют семантику результатов
-
-3. **Конфигурируемость:**
-    - Параметры передаются через конструктор
-    - Поддержка `set_params` для динамического изменения
-    - Параметры влияют на ID для кеширования
-
-4. **Поиск подходящих данных:**
-    - Используют роли для поиска нужных колонок
-    - Могут фильтровать по типам данных
-    - Работают с temporary roles при необходимости
-
-### Взаимодействие компонентов
-
-```python
-# Пример pipeline для matching
-pipeline = [
-    # 1. Подготовка данных
-    OutliersFilter(lower_percentile=0.05, upper_percentile=0.95),
-    NaFiller(method="ffill"),
-    DummyEncoder(),
-
-    # 2. Вычисление расстояний
-    MahalanobisDistance(grouping_role=TreatmentRole()),
-
-    # 3. Поиск пар
-    FaissNearestNeighbors(n_neighbors=1),
-
-    # 4. Оценка качества
-    Bias(grouping_role=TreatmentRole()),
-    MatchingMetrics(metric="ate"),
-
-    # 5. Статистические тесты
-    TTest(compare_by="groups"),
-    KSTest(compare_by="groups")
-]
-```
-
-Каждый компонент:
-
-- Независим и может быть заменен
-- Использует результаты предыдущих через ExperimentData
-- Добавляет свои результаты для последующих
-
-Это обеспечивает максимальную гибкость при построении экспериментов.
-
-## 6. Extension Framework
-
-### Концепция Extension'ов
-
-Extension'ы в HypEx представляют собой систему для инкапсуляции backend-специфичных вычислений, которая обеспечивает работу Calculator'ов с различными типами данных (pandas, Spark, и другими) через единый интерфейс.
-
-#### Ключевое архитектурное разделение
-
-**Backend-агностичность vs Backend-специфичность** — это основной принцип разделения ответственности в HypEx:
-
-**Calculator'ы (Backend-агностичные):**
-- Работают исключительно через Dataset API
-- Не зависят от конкретной реализации backend'а
-- Делегируют backend-специфичные вычисления Extension'ам
-- Фокусируются на бизнес-логике анализа
-
-**Extension'ы (Backend-специфичные):**
-- Инкапсулируют детали работы с конкретными технологиями
-- Предоставляют оптимизированные реализации для разных backend'ов
-- Изолируют внешние зависимости (numpy, scipy, sklearn и т.д.)
-- Автоматически выбирают правильную реализацию для текущего backend'а
-
-### Архитектура Extension'ов
-
-#### Базовый класс Extension
-
-```python
-class Extension(ABC):
-    """Базовый класс для всех Extension'ов в HypEx"""
-    
-    def __init__(self):
-        # Маппинг типов backend'ов на соответствующие методы реализации
-        self.BACKEND_MAPPING = {
-            PandasDataset: self._calc_pandas,
-            # SparkDataset: self._calc_spark,  # Для будущих backend'ов
-            # DaskDataset: self._calc_dask,
-        }
-
-    @abstractmethod
-    def _calc_pandas(self, data: Dataset, **kwargs):
-        """Backend-специфичная реализация для pandas"""
-        raise AbstractMethodError
-
-    def calc(self, data: Dataset, **kwargs):
-        """Основной метод - автоматически выбирает правильную реализацию"""
-        backend_type = type(data.backend)
-        implementation = self.BACKEND_MAPPING[backend_type]
-        return implementation(data=data, **kwargs)
-
-    @staticmethod
-    def result_to_dataset(result: Any, roles: ABCRole | dict[str, ABCRole]) -> Dataset:
-        """Утилитарный метод для преобразования результата обратно в Dataset"""
-        return DatasetAdapter.to_dataset(result, roles=roles)
-```
-
-#### Принцип автоматического выбора backend'а
-
-Extension'ы автоматически определяют тип backend'а Dataset'а и вызывают соответствующую реализацию:
-
-```python
-# Пример: Extension автоматически выбирает pandas реализацию
-dataset = Dataset(data=pandas_dataframe, roles=roles)
-extension = CholeskyExtension()
-
-# calc() автоматически вызовет _calc_pandas()
-result = extension.calc(dataset)
-```
-
-### Типы Extension'ов
-
-#### 1. Базовые математические Extension'ы
-
-Инкапсулируют фундаментальные математические операции:
-
-```python
-class CholeskyExtension(Extension):
-    """Extension для разложения Холецкого"""
-    
-    def _calc_pandas(self, data: Dataset, epsilon: float = 1e-3, **kwargs):
-        # Получаем numpy массив из pandas backend'а
-        cov = data.data.to_numpy()
-        
-        # Добавляем регуляризацию для численной стабильности
-        cov = cov + np.eye(cov.shape[0]) * epsilon
-        
-        # Выполняем разложение Холецкого
-        cholesky_result = np.linalg.cholesky(cov)
-        
-        # Преобразуем результат обратно в Dataset
-        return self.result_to_dataset(
-            pd.DataFrame(cholesky_result, columns=data.columns),
-            {column: FeatureRole() for column in data.columns}
-        )
-
-class InverseExtension(Extension):
-    """Extension для обращения матрицы"""
-    
-    def _calc_pandas(self, data: Dataset, **kwargs):
-        inverse_matrix = np.linalg.inv(data.data.to_numpy())
-        
-        return self.result_to_dataset(
-            pd.DataFrame(inverse_matrix, columns=data.columns),
-            {column: FeatureRole() for column in data.columns}
-        )
-```
-
-#### 2. Encoder Extension'ы
-
-Обеспечивают предобработку данных:
-
-```python
-class DummyEncoderExtension(Extension):
-    """Extension для one-hot encoding"""
-    
-    @staticmethod
-    def _calc_pandas(data: Dataset, target_cols: str | None = None, **kwargs):
-        # Создаем dummy переменные
-        dummies_df = pd.get_dummies(
-            data=data[target_cols].data, 
-            drop_first=True
-        )
-        
-        # Создаем роли для новых колонок на основе исходных
-        roles = {
-            col: data.roles[col[:col.rfind("_")]] 
-            for col in dummies_df.columns
-        }
-        
-        # Обновляем тип данных для boolean колонок
-        for role in roles.values():
-            role.data_type = bool
-            
-        return DatasetAdapter.to_dataset(dummies_df, roles=roles)
-```
-
-#### 3. Статистические Extension'ы
-
-Интегрируют внешние статистические библиотеки:
-
-```python
-class MultiTest(Extension):
-    """Extension для коррекции множественного тестирования из statsmodels"""
-    
-    def __init__(self, method: ABNTestMethodsEnum, alpha: float = 0.05):
-        self.method = method
-        self.alpha = alpha
-        super().__init__()
-
-    def _calc_pandas(self, data: Dataset, **kwargs):
-        # Извлекаем p-values из Dataset
-        p_values = data.data.values.flatten()
-        
-        # Применяем коррекцию из statsmodels
-        from statsmodels.stats.multitest import multipletests
-        corrected_results = multipletests(
-            p_values, 
-            method=self.method.value, 
-            alpha=self.alpha,
-            **kwargs
-        )
-        
-        # Формируем результат в структурированном виде
-        result_data = {
-            "field": [i.split(ID_SPLIT_SYMBOL)[2] for i in data.index],
-            "test": [i.split(ID_SPLIT_SYMBOL)[0] for i in data.index],
-            "old p-value": p_values,
-            "new p-value": corrected_results[1],
-            "correction": [
-                j / i if j != 0 else 0.0 
-                for i, j in zip(corrected_results[1], p_values)
-            ],
-            "rejected": corrected_results[0],
-        }
-        
-        return DatasetAdapter.to_dataset(result_data, StatisticRole())
-```
-
-#### 4. Специализированные Extension'ы
-
-**CompareExtension** для сравнения двух Dataset'ов:
-
-```python
-class CompareExtension(Extension, ABC):
-    """Базовый класс для Extension'ов, сравнивающих два Dataset'а"""
-    
-    def calc(self, data: Dataset, other: Dataset | None = None, **kwargs):
-        return super().calc(data=data, other=other, **kwargs)
-```
-
-**MLExtension** для машинного обучения:
-
-```python
-class MLExtension(Extension):
-    """Базовый класс для ML Extension'ов с поддержкой fit/predict"""
-    
-    def _calc_pandas(self, data: Dataset, test_data: Dataset | None = None, 
-                    mode: Literal["auto", "fit", "predict"] | None = None, **kwargs):
-        
-        if mode in ["auto", "fit"]:
-            return self.fit(data, test_data, **kwargs)
-        return self.predict(data)
-
-    @abstractmethod
-    def fit(self, X, Y=None, **kwargs):
-        """Обучение модели"""
-        raise NotImplementedError
-
-    @abstractmethod
-    def predict(self, X, **kwargs):
-        """Предсказание"""
-        raise NotImplementedError
-```
-
-### Интеграция Extension'ов с Calculator'ами
-
-#### Правильный паттерн использования
-
-Calculator'ы используют Extension'ы через делегирование для backend-специфичных операций:
-
-```python
-# Концептуальный пример правильного использования Extension'ов в Calculator'е
-class MahalanobisDistance(Calculator):
-    """Calculator для вычисления расстояния Махаланобиса"""
-    
-    def _inner_function(cls, data: Dataset, test_data: Dataset) -> dict:
-        # Вычисление ковариационной матрицы (backend-агностично)
-        control_cov = data.cov()
-        test_cov = test_data.cov()
-        pooled_cov = (control_cov + test_cov) / 2
-        
-        # Делегируем backend-специфичные операции Extension'ам
-        cholesky_ext = CholeskyExtension()
-        cholesky_result = cholesky_ext.calc(pooled_cov)
-        
-        inverse_ext = InverseExtension()
-        mahalanobis_transform = inverse_ext.calc(cholesky_result)
-        
-        # Применяем преобразование (backend-агностично через Dataset API)
-        y_control = data.dot(mahalanobis_transform.transpose())
-        y_test = test_data.dot(mahalanobis_transform.transpose())
-        
-        return {"control": y_control, "test": y_test}
-```
-
-#### Архитектурные преимущества
-
-**1. Автоматическая адаптация к backend'у:**
-- Extension автоматически выбирает правильную реализацию
-- Calculator остается backend-агностичным
-- Добавление нового backend'а требует только реализации новых методов в Extension'ах
-
-**2. Изоляция зависимостей:**
-- Внешние библиотеки (numpy, scipy, sklearn) изолированы в Extension'ах
-- Calculator'ы не имеют прямых зависимостей на внешние библиотеки
-- Упрощается управление зависимостями и тестирование
-
-**3. Переиспользование логики:**
-- Extension'ы можно использовать в разных Calculator'ах
-- Единая реализация сложных операций для всей системы
-
-### Жизненный цикл Extension'ов
-
-#### 1. Инициализация и выбор backend'а
-
-```python
-# При вызове Extension'а происходит автоматический выбор реализации
-extension = CholeskyExtension()
-
-# Extension анализирует тип backend'а Dataset'а
-pandas_dataset = Dataset(data=pd.DataFrame(...), roles=...)
-result = extension.calc(pandas_dataset)  # Вызовет _calc_pandas()
-
-# Для другого backend'а автоматически выберется другая реализация
-# spark_dataset = Dataset(data=spark_df, roles=...)
-# result = extension.calc(spark_dataset)  # Вызовет _calc_spark()
-```
-
-#### 2. Обработка результатов
-
-Extension'ы стандартизируют возвращаемые значения через `result_to_dataset()`:
-
-```python
-def _calc_pandas(self, data: Dataset, **kwargs):
-    # Выполняем backend-специфичные вычисления
-    raw_result = np.some_calculation(data.data.to_numpy())
-    
-    # Стандартизируем результат - всегда возвращаем Dataset
-    return self.result_to_dataset(
-        pd.DataFrame(raw_result, columns=data.columns),
-        {col: FeatureRole() for col in data.columns}
-    )
-```
-
-### Создание кастомных Extension'ов
-
-#### Шаблон для создания Extension'а
-
-```python
-class CustomExtension(Extension):
-    """Шаблон для создания кастомного Extension'а"""
-    
-    def __init__(self, param1: float = 1.0, param2: str = "default"):
-        """Инициализация с параметрами Extension'а"""
-        self.param1 = param1
-        self.param2 = param2
-        super().__init__()
-    
-    def _calc_pandas(self, data: Dataset, **kwargs):
-        """Реализация для pandas backend'а"""
-        try:
-            # Проверяем доступность необходимых библиотек
-            import required_library
-            
-            # Извлекаем данные из Dataset
-            numpy_data = data.data.to_numpy()
-            
-            # Выполняем backend-специфичные вычисления
-            result = required_library.some_function(
-                numpy_data, 
-                param1=self.param1,
-                param2=self.param2,
-                **kwargs
-            )
-            
-            # Преобразуем результат обратно в Dataset
-            if isinstance(result, np.ndarray):
-                result_df = pd.DataFrame(result, columns=data.columns)
-                roles = {col: FeatureRole() for col in data.columns}
-            else:
-                # Обработка других типов результатов
-                result_df = pd.DataFrame({"result": [result]})
-                roles = {"result": StatisticRole()}
-            
-            return self.result_to_dataset(result_df, roles)
-            
-        except ImportError:
-            raise RuntimeError(
-                "CustomExtension требует библиотеку 'required_library'. "
-                "Установите: pip install required_library"
-            )
-        except Exception as e:
-            raise RuntimeError(f"Ошибка в CustomExtension: {e}")
-    
-    # Для поддержки других backend'ов добавьте соответствующие методы:
-    # def _calc_spark(self, data: Dataset, **kwargs):
-    #     """Реализация для Spark backend'а"""
-    #     pass
-```
-
-### Архитектурные принципы Extension'ов
-
-#### 1. Принцип единого интерфейса
-
-Все Extension'ы предоставляют метод `calc()` с одинаковой сигнатурой:
-
-```python
-# Единый интерфейс для всех Extension'ов
-result = extension.calc(data=dataset, **optional_params)
-```
-
-#### 2. Принцип изоляции зависимостей
-
-Extension'ы изолируют внешние зависимости от основной логики:
-
-```python
-# Правильно: зависимости изолированы в Extension
-class ScipyStatsExtension(Extension):
-    def _calc_pandas(self, data: Dataset, **kwargs):
-        from scipy.stats import ttest_ind  # Изолированный import
-        # ... использование scipy
-        
-# Неправильно: прямое использование в Calculator
-class BadCalculator(Calculator):
-    def _inner_function(data: Dataset, **kwargs):
-        from scipy.stats import ttest_ind  # Нарушение архитектуры!
-        # ... это нарушает backend-агностичность
-```
-
-#### 3. Принцип автоматического выбора реализации
-
-Extension'ы автоматически выбирают оптимальную реализацию:
-
-```python
-class AdaptiveExtension(Extension):
-    def __init__(self):
-        super().__init__()
-        # Расширяем mapping при добавлении новых backend'ов
-        if hasattr(self, '_calc_spark'):
-            self.BACKEND_MAPPING[SparkDataset] = self._calc_spark
-        if hasattr(self, '_calc_dask'):
-            self.BACKEND_MAPPING[DaskDataset] = self._calc_dask
-```
-
-#### 4. Принцип graceful degradation
-
-Extension'ы обеспечивают работу даже при частичной недоступности функций:
-
-```python
-class RobustExtension(Extension):
-    def _calc_pandas(self, data: Dataset, **kwargs):
-        try:
-            # Пытаемся использовать оптимизированную реализацию
-            import scipy.linalg
-            return self._fast_implementation(data, **kwargs)
-        except ImportError:
-            # Fallback на базовую реализацию
-            return self._basic_implementation(data, **kwargs)
-```
-
-### Преимущества Extension Framework
-
-#### 1. Архитектурная чистота
-
-- **Четкое разделение ответственности:** Calculator'ы для логики, Extension'ы для реализации
-- **Backend-агностичность:** Бизнес-логика не зависит от технических деталей
-- **Изоляция зависимостей:** Внешние библиотеки не "протекают" в основной код
-
-#### 2. Производительность и масштабируемость
-
-- **Автоматические оптимизации:** Система автоматически выбирает лучшую реализацию
-- **Поддержка разных backend'ов:** pandas, Spark, Dask без изменения бизнес-логики
-- **Ленивые вычисления:** Некоторые Extension'ы могут использовать ленивые вычисления
-
-#### 3. Гибкость и расширяемость
-
-- **Простое добавление backend'ов:** Новые backend'ы добавляются через Extension'ы
-- **Модульность:** Extension'ы можно переиспользовать и комбинировать
-- **Эволюция технологий:** Поддержка новых библиотек через Extension'ы
-
-Extension Framework является ключевым архитектурным решением HypEx, которое обеспечивает баланс между простотой использования и техническими возможностями. Он позволяет Calculator'ам оставаться backend-агностичными, при этом используя мощь специализированных библиотек для каждого типа данных.
+### Принципы проектирования слоя вычислений
+
+1. **Специализация по типам операций** — каждый тип Calculator'а решает свой класс задач
+2. **Унификация интерфейсов** — общие паттерны для работы с ролями и данными  
+3. **Расширяемость** — легко добавлять новые операции через наследование
+4. **Backend-агностичность** — вычисления делегируются Extension'ам
+5. **Composability** — Calculator'ы можно комбинировать в complex pipeline'ы
 
 ## 7. Analyzer'ы — комплексный анализ результатов
 
@@ -1721,166 +992,94 @@ Analyzer'ы являются ключевым компонентом для пр
 
 ### Базовый класс Experiment
 
-Experiment — это контейнер для цепочки Executor'ов с логикой управления их выполнением:
-
 ```python
 class Experiment(Executor):
-    def __init__(self,
-                 executors: Sequence[Executor],
-                 transformer: bool = None,
-                 key: Any = ""):
+    def __init__(self, executors: Sequence[Executor]):
         self.executors = executors
-        self.transformer = transformer or self._detect_transformer()
-        super().__init__(key)
-
-    def _detect_transformer(self) -> bool:
-        """Автоматически определяет, содержит ли цепочка Transformer'ы"""
-        return all(executor._is_transformer for executor in self.executors)
+        super().__init__()
 
     def execute(self, data: ExperimentData) -> ExperimentData:
-        """Последовательное выполнение всех Executor'ов"""
-        experiment_data = deepcopy(data) if self.transformer else data
+        result_data = data
         for executor in self.executors:
-            executor.key = self.key
-            experiment_data = executor.execute(experiment_data)
-        return experiment_data
+            result_data = executor.execute(result_data)
+        return result_data
+
+    @property
+    def transformer(self) -> bool:
+        """Определяет, есть ли среди Executor'ов Transformer'ы"""
+        return any(isinstance(ex, Transformer) for ex in self.executors)
 ```
 
 **Ключевые особенности:**
 
-- **Композиция** — объединяет множество Executor'ов
-- **Порядок важен** — Executor'ы выполняются последовательно
-- **Управление состоянием** — копирует данные если есть Transformer'ы
-- **Наследование от Executor** — Experiment сам является Executor'ом (паттерн Composite)
+- **Композиция** — Experiment сам является Executor'ом и может включать другие Experiment'ы
+- **Автоопределение копирования** — автоматически определяет, нужно ли копировать данные
+- **ID генерация** — создает составной ID из ID своих Executor'ов
 
-### OnRoleExperiment — выполнение для каждой роли
+### Специализированные эксперименты
 
-OnRoleExperiment применяет цепочку Executor'ов к каждой колонке с определенной ролью:
+#### OnRoleExperiment — применение по ролям
+
+Применяет набор Executor'ов ко всем колонкам с определенной ролью:
 
 ```python
 class OnRoleExperiment(Experiment):
-    def __init__(self,
-                 executors: list[Executor],
-                 role: ABCRole | Sequence[ABCRole]):
-        self.role = [role] if isinstance(role, ABCRole) else list(role)
+    def __init__(self, executors: Sequence[Executor], role: ABCRole):
+        self.role = role
         super().__init__(executors)
 
     def execute(self, data: ExperimentData) -> ExperimentData:
-        # Находим все колонки с нужной ролью
-        for field in data.ds.search_columns(self.role):
-            # Устанавливаем временную роль для текущей колонки
-            data.ds.tmp_roles = {field: TempTargetRole()}
-            # Выполняем всю цепочку для этой колонки
-            data = super().execute(data)
-            # Очищаем временную роль
-            data.ds.tmp_roles = {}
-        return data
-```
-
-**Пример использования:**
-
-```python
-# Применить тесты ко всем target метрикам
-experiment = OnRoleExperiment(
-    executors=[
-        GroupDifference(grouping_role=TreatmentRole()),
-        TTest(grouping_role=TreatmentRole()),
-        KSTest(grouping_role=TreatmentRole())
-    ],
-    role=TargetRole()  # Будет применено к каждой колонке с TargetRole
-)
-
-# Если есть колонки: revenue (TargetRole), retention (TargetRole), clicks (FeatureRole)
-# То тесты будут применены к revenue и retention, но не к clicks
-```
-
-### ExperimentWithReporter — эксперименты с отчетностью
-
-Добавляет возможность генерации отчетов после выполнения:
-
-```python
-class ExperimentWithReporter(Experiment):
-    def __init__(self,
-                 executors: Sequence[Executor],
-                 reporter: Reporter):
-        super().__init__(executors)
-        self.reporter = reporter
-
-    def one_iteration(self,
-                      data: ExperimentData,
-                      key: str = "") -> Dataset:
-        """Одна итерация эксперимента с отчетом"""
-        t_data = ExperimentData(data.ds)
-        self.key = key
-        t_data = super().execute(t_data)
-        return self.reporter.report(t_data)
-```
-
-Это базовый класс для специализированных экспериментов, которые нуждаются в форматированном выводе результатов.
-
-### CycledExperiment — многократное выполнение
-
-Выполняет эксперимент заданное количество раз:
-
-```python
-class CycledExperiment(ExperimentWithReporter):
-    def __init__(self,
-                 executors: Sequence[Executor],
-                 reporter: DatasetReporter,
-                 n_iterations: int = 10):
-        super().__init__(executors, reporter)
-        self.n_iterations = n_iterations
-
-    def execute(self, data: ExperimentData) -> ExperimentData:
-        results = []
-        for i in range(self.n_iterations):
-            # Каждая итерация начинается с чистых данных
-            iteration_result = self.one_iteration(data, key=str(i))
-            results.append(iteration_result)
-
-        # Объединяем результаты всех итераций
-        combined_results = Dataset.concat(results)
-
-        return data.set_value(
-            space=ExperimentDataEnum.analysis_tables,
-            executor_id=self.id,
-            value=combined_results
-        )
+        target_columns = data.ds.search_columns(roles=self.role)
+        
+        result_data = data
+        for column in target_columns:
+            for executor in self.executors:
+                # Применяем executor к каждой колонке с данной ролью
+                executor.set_params({"target_column": column})
+                result_data = executor.execute(result_data)
+        
+        return result_data
 ```
 
 **Применение:**
 
-- Bootstrap анализ
-- Оценка стабильности результатов
-- Monte Carlo симуляции
+- Статистические тесты ко всем метрикам
+- Применение фильтров ко всем признакам
+- Агрегация по всем группирующим колонкам
 
-### GroupExperiment — выполнение по группам
+#### GroupExperiment — обработка по группам
 
-Применяет эксперимент к каждой группе данных отдельно:
+Разбивает данные по группам и применяет Executor'ы к каждой группе:
 
 ```python
 class GroupExperiment(ExperimentWithReporter):
     def __init__(self,
                  executors: Sequence[Executor],
                  reporter: DatasetReporter,
-                 searching_role: ABCRole = GroupingRole()):
-        super().__init__(executors, reporter)
+                 searching_role: ABCRole):
         self.searching_role = searching_role
+        super().__init__(executors, reporter)
 
     def execute(self, data: ExperimentData) -> ExperimentData:
-        # Находим поле для группировки
-        group_field = data.ds.search_columns([self.searching_role])[0]
-
-        results = []
-        for group, group_data in data.ds.groupby(group_field):
-            result = self.one_iteration(
-                ExperimentData(group_data),
-                str(group[0])
-            )
-            results.append(result)
-
-        # Объединяем результаты с сохранением индексов групп
-        return self._set_result(data, results, reset_index=False)
+        grouping_columns = data.ds.search_columns(roles=self.searching_role)
+        
+        all_results = []
+        for group_col in grouping_columns:
+            for group_value in data.ds[group_col].unique():
+                # Фильтруем данные для текущей группы
+                group_data = data.ds[data.ds[group_col] == group_value]
+                t_data = ExperimentData(group_data)
+                
+                # Применяем все Executor'ы к группе
+                for executor in self.executors:
+                    t_data = executor.execute(t_data)
+                
+                # Сохраняем результат группы
+                group_result = self.reporter.report(t_data)
+                group_result[group_col] = group_value
+                all_results.append(group_result)
+        
+        return self._set_result(data, all_results, reset_index=False)
 ```
 
 **Применение:**
@@ -1889,7 +1088,7 @@ class GroupExperiment(ExperimentWithReporter):
 - Гетерогенные эффекты
 - Подгрупповой анализ
 
-### ParamsExperiment — параметрический поиск
+#### ParamsExperiment — параметрический поиск
 
 Выполняет эксперимент с различными комбинациями параметров:
 
@@ -1947,12 +1146,13 @@ class ParamsExperiment(ExperimentWithReporter):
             # Сохраняем результат итерации
             iteration_result = self.reporter.report(t_data)
             iteration_result["params"] = flat_param
+            iteration_result["iteration"] = i
             results.append(iteration_result)
 
         return self._set_result(data, results)
 ```
 
-### IfParamsExperiment — параметрический поиск с условием остановки
+#### IfParamsExperiment — параметрический поиск с условием остановки
 
 Добавляет возможность ранней остановки при достижении условия:
 
@@ -1969,12 +1169,16 @@ class IfParamsExperiment(ParamsExperiment):
     def execute(self, data: ExperimentData) -> ExperimentData:
         self._update_flat_params()
 
-        for flat_param in tqdm(self._flat_params):
+        for i, flat_param in enumerate(tqdm(self._flat_params)):
             t_data = ExperimentData(data.ds)
 
             # Выполняем эксперимент
             for executor in self.executors:
-                executor.set_params(flat_param)
+                params_for_executor = self._extract_params_for_executor(
+                    executor, flat_param
+                )
+                if params_for_executor:
+                    executor.set_params(params_for_executor)
                 t_data = executor.execute(t_data)
 
             # Проверяем условие остановки
@@ -1986,7 +1190,10 @@ class IfParamsExperiment(ParamsExperiment):
 
             if if_result.variables[if_executor_id]["response"]:
                 # Условие выполнено - останавливаемся
-                return self._set_result(data, [self.reporter.report(t_data)])
+                final_result = self.reporter.report(t_data)
+                final_result["params"] = flat_param
+                final_result["iteration"] = i
+                return self._set_result(data, [final_result])
 
         # Условие не выполнено ни для одной комбинации
         return data
@@ -2229,7 +1436,7 @@ aa_grid_search = ParamsExperiment(
         AASplitter(),  # Будет параметризован
         Experiment([
             GroupSizes(grouping_role=AdditionalTreatmentRole()),
-            OnRoleExperiment(
+            OnRoleExperiment(  # Применить тесты ко всем targets
                 executors=[
                     TTest(grouping_role=AdditionalTreatmentRole()),
                     KSTest(grouping_role=AdditionalTreatmentRole())
@@ -2263,45 +1470,6 @@ optimized_search = IfParamsExperiment(
     ),
     reporter=OptimalParamsReporter()
 )
-
-# Вложенный grid search для hyperparameter tuning
-hyperparameter_tuning = ParamsExperiment(
-    executors=[
-        # Внешний уровень: параметры предобработки
-        ParamsExperiment(
-            executors=[
-                OutliersFilter(),
-                NaFiller()
-            ],
-            params={
-                OutliersFilter: {
-                    "lower_percentile": [0.01, 0.05],
-                    "upper_percentile": [0.95, 0.99]
-                },
-                NaFiller: {
-                    "method": ["ffill", "bfill", "mean"]
-                }
-            },
-            reporter=PreprocessingReporter()
-        ),
-
-        # Внутренний уровень: параметры модели
-        ParamsExperiment(
-            executors=[
-                FaissNearestNeighbors()
-            ],
-            params={
-                FaissNearestNeighbors: {
-                    "n_neighbors": [1, 3, 5, 7],
-                    "faiss_mode": ["base", "fast"]
-                }
-            },
-            reporter=ModelReporter()
-        )
-    ],
-    params={},  # Внешний уровень без дополнительных параметров
-    reporter=HyperparameterReporter()
-)
 ```
 
 **Преимущества:**
@@ -2315,167 +1483,117 @@ hyperparameter_tuning = ParamsExperiment(
 Многоуровневая обработка с агрегацией на разных уровнях.
 
 ```python
-# Иерархический анализ: пользователь -> сегмент -> общий
+# Иерархический анализ по регионам и городам
 hierarchical_analysis = Experiment([
-    # Уровень 1: Анализ на уровне пользователей
-    OnRoleExperiment(
-        executors=[
-            UserLevelMetrics(),
-            UserLevelTests()
-        ],
-        role=UserRole()
-    ),
-
-    # Уровень 2: Агрегация по сегментам
+    # Уровень 1: Анализ по регионам
     GroupExperiment(
         executors=[
-            SegmentAggregator(),
-            SegmentLevelTests()
+            # Базовая статистика по региону
+            GroupSizes(), GroupDifference(),
+            TTest(), KSTest(),
+            
+            # Уровень 2: Анализ городов внутри региона
+            GroupExperiment(
+                executors=[
+                    GroupSizes(), GroupDifference(),
+                    TTest()  # Упрощенный анализ для городов
+                ],
+                searching_role=CityRole(),
+                reporter=CityReporter()
+            )
         ],
-        searching_role=SegmentRole(),
-        reporter=SegmentReporter()
+        searching_role=RegionRole(),
+        reporter=RegionReporter()
     ),
 
-    # Уровень 3: Общая агрегация
-    Experiment([
-        GlobalAggregator(),
-        GlobalSignificanceTest(),
-        MultipleTestingCorrection()
-    ])
+    # Агрегация по всем уровням
+    HierarchicalAggregator()
 ])
 
-# Каскадный анализ с фильтрацией на каждом уровне
-cascade_filtering = Experiment([
-    # Этап 1: Грубая фильтрация
-    ConstFilter(threshold=0.99),
-
-    # Этап 2: Фильтрация по корреляции (только для оставшихся)
-    CorrFilter(threshold=0.9),
-
-    # Этап 3: Тонкая фильтрация по CV (только для некоррелированных)
-    CVFilter(lower_bound=0.01, upper_bound=10),
-
-    # Этап 4: Финальная фильтрация outliers
-    OutliersFilter(lower_percentile=0.01, upper_percentile=0.99)
-])
-```
-
-**Преимущества:**
-
-- Эффективная обработка больших данных
-- Иерархическая агрегация результатов
-- Последовательное уточнение анализа
-
-#### 6. Retry паттерн — повторные попытки с разными стратегиями
-
-Попытки выполнить анализ разными способами при неудаче.
-
-```python
-class RetryExecutor(Executor):
-    def __init__(self, strategies: list[Executor], max_retries: int = 3):
-        self.strategies = strategies
-        self.max_retries = max_retries
-
-    def execute(self, data: ExperimentData) -> ExperimentData:
-        for i, strategy in enumerate(self.strategies[:self.max_retries]):
-            try:
-                result = strategy.execute(data)
-                if self._is_valid_result(result):
-                    return result
-            except Exception as e:
-                if i == len(self.strategies) - 1:
-                    raise e
-                continue
-        return data
-
-
-# Использование retry паттерна
-robust_matching = Experiment([
-    RetryExecutor(
-        strategies=[
-            # Стратегия 1: Точный matching
-            Experiment([
-                MahalanobisDistance(),
-                FaissNearestNeighbors(n_neighbors=1, faiss_mode="base")
-            ]),
-
-            # Стратегия 2: Приближенный matching
-            Experiment([
-                FaissNearestNeighbors(n_neighbors=5, faiss_mode="fast")
-            ]),
-
-            # Стратегия 3: Fallback на случайное сопоставление
-            RandomMatching()
-        ]
+# Многоуровневая предобработка
+hierarchical_preprocessing = Experiment([
+    # Глобальная предобработка
+    GlobalOutliersFilter(),
+    
+    # Предобработка по группам
+    GroupExperiment(
+        executors=[
+            LocalOutliersFilter(),  # Локальное удаление выбросов
+            GroupSpecificNormalization()  # Нормализация по группе
+        ],
+        searching_role=TreatmentRole(),
+        reporter=PreprocessingReporter()
     ),
-    MatchingQualityAssessment()
+    
+    # Финальная агрегация
+    FinalNormalization()
 ])
 ```
 
 **Преимущества:**
 
-- Устойчивость к ошибкам
-- Graceful degradation
-- Адаптивность к качеству данных
+- Естественное моделирование иерархических структур
+- Агрегация на разных уровнях детализации
+- Гибкость в обработке сложных данных
 
-#### 7. Observer паттерн — мониторинг выполнения
+### Композиция и переиспользуемость
 
-Добавление логирования и мониторинга в процесс выполнения.
+Эксперименты спроектированы для максимального переиспользования:
 
 ```python
-class ObservableExperiment(Experiment):
-    def __init__(self, executors: list[Executor], observers: list[Observer] = None):
-        super().__init__(executors)
-        self.observers = observers or []
+# Стандартные блоки
+data_cleaning = Experiment([
+    NaFiller(method="ffill"),
+    OutliersFilter(lower_percentile=0.05, upper_percentile=0.95)
+])
 
-    def execute(self, data: ExperimentData) -> ExperimentData:
-        for i, executor in enumerate(self.executors):
-            # Уведомляем о начале
-            for observer in self.observers:
-                observer.on_executor_start(executor, data)
+feature_engineering = Experiment([
+    CategoryAggregator(min_frequency=0.01),
+    DummyEncoder(),
+    ConstFilter(threshold=0.95)
+])
 
-            # Выполнение
-            start_time = time.time()
-            data = executor.execute(data)
-            execution_time = time.time() - start_time
+basic_testing = Experiment([
+    GroupSizes(),
+    GroupDifference(),
+    TTest(),
+    KSTest()
+])
 
-            # Уведомляем о завершении
-            for observer in self.observers:
-                observer.on_executor_complete(executor, data, execution_time)
+# Композиция для разных случаев
+simple_ab_test = Experiment([
+    data_cleaning,
+    basic_testing,
+    ABAnalyzer()
+])
 
-        return data
+advanced_ab_test = Experiment([
+    data_cleaning,
+    feature_engineering,
+    basic_testing,
+    Chi2Test(),  # Дополнительный тест
+    UTest(),     # Непараметрический тест
+    ABAnalyzer(multitest_method="fdr_bh")
+])
 
-
-# Использование
-experiment = ObservableExperiment(
-    executors=[...],
-    observers=[
-        LoggingObserver(),
-        MetricsCollector(),
-        ProgressBar(),
-        AlertingObserver(threshold=60)  # Алерт если executor > 60 сек
-    ]
-)
+matching_analysis = Experiment([
+    data_cleaning,
+    feature_engineering,
+    # Специфичные для matching компоненты
+    MahalanobisDistance(),
+    FaissNearestNeighbors(),
+    MatchingMetrics(),
+    MatchingAnalyzer()
+])
 ```
 
-**Преимущества:**
+Каждый компонент:
 
-- Прозрачность выполнения
-- Сбор метрик и диагностика
-- Возможность прерывания при проблемах
+- Независим и может быть заменен
+- Использует результаты предыдущих через ExperimentData
+- Добавляет свои результаты для последующих
 
-### Лучшие практики при проектировании экспериментов
-
-1. **Модульность** — разбивайте сложные эксперименты на логические блоки
-2. **Переиспользование** — создавайте библиотеку стандартных подэкспериментов
-3. **Валидация** — добавляйте проверки между этапами
-4. **Документирование** — используйте говорящие имена и комментарии
-5. **Тестирование** — тестируйте эксперименты на небольших данных
-6. **Версионирование** — сохраняйте версии успешных экспериментов
-7. **Мониторинг** — логируйте ключевые метрики выполнения
-
-Слой экспериментов предоставляет мощные абстракции для построения сложных аналитических pipeline'ов, сохраняя при этом
-простоту и читаемость кода.
+Это обеспечивает максимальную гибкость при построении экспериментов.
 
 ## 9. Система Reporter'ов
 
@@ -2556,180 +1674,73 @@ ExperimentData → DictReporter → dict → OnDictReporter → Любой фо�
 
 **Ключевая идея:** Разделение извлечения данных и их представления.
 
-#### Стандартные форматтеры
+#### Примеры OnDictReporter
 
-**DatasetReporter** — табличное представление:
+**DatasetReporter** — конвертация в Dataset:
 
 ```python
 class DatasetReporter(OnDictReporter):
-    def report(self, data: ExperimentData):
-        # Получаем базовый dict
-        dict_report = self.dict_reporter.report(data)
-        # Преобразуем в структурированную таблицу
-        return self.convert_flat_dataset(dict_report)
+    def __init__(self, dict_reporter: DictReporter):
+        self.dict_reporter = dict_reporter
+
+    def report(self, data: ExperimentData) -> Dataset:
+        result_dict = self.dict_reporter.report(data)
+        return Dataset.from_dict(result_dict)
 ```
 
-**Потенциальные форматтеры (roadmap):**
-
-**HTMLReporter** — интерактивные HTML отчеты:
-
-- Таблицы с сортировкой и фильтрацией
-- Графики и визуализации
-- Collapsible секции для детализации
-- Экспорт в различные форматы
-
-**PDFReporter** — профессиональные PDF отчеты:
-
-- Форматированные таблицы и графики
-- Executive summary на первой странице
-- Детальные приложения с методологией
-- Брендирование и стилизация
-
-**MarkdownReporter** — отчеты для документации:
-
-- Структурированный markdown
-- Таблицы в GFM формате
-- Встроенные графики как base64
-- Готов для вставки в wiki/confluence
-
-**JSONReporter** — машиночитаемый формат:
-
-- Полная сериализация результатов
-- Метаданные об эксперименте
-- Версионирование схемы
-- Поддержка streaming
-
-**ExcelReporter** — multi-sheet Excel файлы:
-
-- Summary на первом листе
-- Детальные результаты по листам
-- Условное форматирование
-- Встроенные формулы и графики
-
-#### Создание кастомного форматтера
+**HTMLReporter** — генерация HTML отчетов:
 
 ```python
-class CustomFormatter(OnDictReporter):
-    def __init__(self, dict_reporter: DictReporter, format_options: dict):
-        super().__init__(dict_reporter)
-        self.format_options = format_options
-
-    def report(self, data: ExperimentData):
-        # Получаем базовый словарь
-        base_dict = self.dict_reporter.report(data)
-
-        # Применяем кастомное форматирование
-        formatted = self.apply_formatting(base_dict)
-
-        # Добавляем метаданные
-        formatted['metadata'] = self.extract_metadata(data)
-
-        # Возвращаем в нужном формате
-        return self.render(formatted)
+class HTMLReporter(OnDictReporter):
+    def report(self, data: ExperimentData) -> str:
+        result_dict = self.dict_reporter.report(data)
+        return self._dict_to_html(result_dict)
 ```
 
-### Использование Reporter'ов в Experiment
+### Специализированные Reporter'ы
 
-Reporter'ы интегрированы в систему экспериментов через класс ExperimentWithReporter.
-
-#### ExperimentWithReporter
-
-Этот класс добавляет автоматическую генерацию отчетов к экспериментам:
+#### ABDictReporter — A/B тестирование
 
 ```python
-class ExperimentWithReporter(Experiment):
-    def __init__(self, executors: list, reporter: Reporter):
-        super().__init__(executors)
-        self.reporter = reporter
+class ABDictReporter(TestDictReporter):
+    def report(self, data: ExperimentData) -> dict:
+        result = {}
 
-    def one_iteration(self, data: ExperimentData, key: str = ""):
-        # Выполняем эксперимент
-        result_data = super().execute(data)
-        # Автоматически генерируем отчет
-        return self.reporter.report(result_data)
+        # Извлекаем результаты тестов
+        result.update(self._extract_from_comparators(data))
+
+        # Извлекаем размеры групп
+        result.update(self._extract_from_executors(data, [GroupSizes]))
+
+        # Извлекаем эффекты
+        result.update(self._extract_from_executors(data, [GroupDifference]))
+
+        # Результаты ABAnalyzer (если есть)
+        ab_analysis = self._extract_from_executors(data, [ABAnalyzer])
+        if ab_analysis:
+            result.update(ab_analysis)
+
+        return result
 ```
 
-#### Специализированные эксперименты с Reporter'ами
-
-**ParamsExperiment** — всегда требует Reporter:
-
-- После каждой комбинации параметров генерирует отчет
-- Агрегирует отчеты всех итераций
-- Позволяет сравнить результаты разных параметров
-
-**GroupExperiment** — Reporter для каждой группы:
-
-- Генерирует отчет для каждой группы отдельно
-- Объединяет в общую таблицу с индексом по группам
-
-**CycledExperiment** — Reporter для каждого цикла:
-
-- Отчет после каждой итерации
-- Статистика по всем итерациям
-
-#### Паттерны использования
-
-**Inline reporter в эксперименте:**
+#### MatchingDictReporter — Matching анализ
 
 ```python
-experiment = ParamsExperiment(
-    executors=[...],
-    params={...},
-    reporter=DatasetReporter(ABDictReporter())
-)
+class MatchingDictReporter(DictReporter):
+    def report(self, data: ExperimentData) -> dict:
+        result = {}
+
+        # Результаты matching
+        result.update(self._extract_matching_results(data))
+
+        # Метрики качества
+        result.update(self._extract_quality_metrics(data))
+
+        # Bias оценки
+        result.update(self._extract_bias_analysis(data))
+
+        return result
 ```
-
-**Композиция репортеров:**
-
-```python
-base_reporter = TestDictReporter()
-formatted_reporter = DatasetReporter(base_reporter)
-
-experiment = ExperimentWithReporter(
-    executors=[...],
-    reporter=formatted_reporter
-)
-```
-
-**Множественные отчеты:**
-
-```python
-data = experiment.execute(initial_data)
-
-# Разные форматы из одних данных
-summary = SummaryDictReporter().report(data)
-detailed = DetailedDatasetReporter().report(data)
-visual = VisualizationReporter().report(data)
-```
-
-### Иерархия конкретных Reporter'ов
-
-HypEx предоставляет набор готовых Reporter'ов для типовых задач:
-
-#### Для статистических тестов
-
-- **TestDictReporter** — базовый класс для тестовых репортеров
-- **OneAADictReporter** — отчет по одному A/A тесту
-- **AADatasetReporter** — табличный отчет по A/A тестам
-- **ABDictReporter** — отчет по A/B тесту
-- **ABDatasetReporter** — табличный отчет по A/B тесту
-- **HomoDictReporter** — отчет по тесту гомогенности
-- **HomoDatasetReporter** — табличный отчет по гомогенности
-
-#### Для matching
-
-- **MatchingDictReporter** — базовый отчет по matching
-- **MatchingDatasetReporter** — табличный отчет по matching
-- **MatchingQualityDictReporter** — отчет по качеству matching
-- **MatchingQualityDatasetReporter** — табличный отчет по качеству
-
-#### Специальные репортеры
-
-- **AAPassedReporter** — определение прошедших A/A тестов
-- **AABestSplitReporter** — отчет о лучшем разбиении
-
-Каждый из этих Reporter'ов знает, какие именно результаты извлекать из ExperimentData и как их правильно
-интерпретировать.
 
 ### Принципы проектирования Reporter'ов
 
@@ -3132,8 +2143,9 @@ matching_custom = Matching(
 
 #### Принцип "90% в 2 строчки"
 
-Shell слой реализует ключевой принцип библиотеки HypEx: 90% практических задач должны решаться в 2 строчки кода. Каждый
-Shell создавался на основе анализа реальных индустриальных потребностей:
+Shell слой реализует ключевой принцип библиотеки HypEx: 90% практических задач должны решаться в 2 строчки кода.
+
+Каждый Shell создавался на основе анализа реальных индустриальных потребностей:
 
 - **AATest** — стандартная процедура валидации разбиений в product экспериментах
 - **ABTest** — основной инструмент для измерения эффекта изменений
@@ -3284,393 +2296,328 @@ print(f"Размеры групп:\n{results.sizes}")
 
 **Характеристики задачи:**
 
-- Базовый A/B тест + дополнительные методы проверки качества
-- Нестандартная комбинация стандартных блоков
-- Требуется кастомизация параметров анализа
-- Команда готова работать с более сложным API
+- Нестандартные дополнительные тесты
+- Специфические настройки коррекции
+- Сохранение стандартной основы A/B теста
 
-**Решение — композиция Executor'ов:**
+**Решение — композиция стандартных компонентов:**
 
 ```python
-from hypex.experiments.base import Experiment, OnRoleExperiment
-from hypex.comparators import TTest, KSTest, PSI
-from hypex.operators import GroupSizes, GroupDifference
-from hypex.analyzers.ab import ABAnalyzer
-from hypex.dataset import TargetRole
+from hypex.experiments import Experiment, OnRoleExperiment
+from hypex.executors import PSITest, TTest, KSTest, GroupSizes, GroupDifference
+from hypex.analyzers import ABAnalyzer
+from hypex.reporters import ABDictReporter
 
-# Создание кастомного эксперимента
-custom_ab_experiment = Experiment([
-    # Стандартная часть
+# Построение кастомного A/B теста
+enhanced_ab_test = Experiment([
+    # Базовые метрики (стандартно)
+    GroupSizes(grouping_role=TreatmentRole()),
+    GroupDifference(grouping_role=TreatmentRole()),
+    
+    # Применяем расширенный набор тестов ко всем метрикам
     OnRoleExperiment([
-        GroupSizes(grouping_role=TreatmentRole()),
-        GroupDifference(grouping_role=TreatmentRole()),
         TTest(grouping_role=TreatmentRole()),
         KSTest(grouping_role=TreatmentRole()),
-
-        # Дополнительный анализ стабильности
-        PSI(grouping_role=TreatmentRole()),  # Стабильность распределения
-
+        PSITest(grouping_role=TreatmentRole())  # Дополнительный тест
     ], role=TargetRole()),
-
-    # Анализ результатов с менее консервативной коррекцией
-    ABAnalyzer(multitest_method="fdr_bh")  # False Discovery Rate вместо Bonferroni
+    
+    # Анализ с кастомными настройками
+    ABAnalyzer(
+        multitest_method="fdr_bh",  # Менее консервативная коррекция
+        effect_size_threshold=0.02  # Кастомный порог практической значимости
+    )
 ])
 
 # Выполнение
 experiment_data = ExperimentData(dataset)
-results = custom_ab_experiment.execute(experiment_data)
+results = enhanced_ab_test.execute(experiment_data)
 
-# Извлечение результатов через Reporter
-from hypex.reporters.ab import ABDictReporter
-
+# Извлечение результатов
 reporter = ABDictReporter()
 formatted_results = reporter.report(results)
-
-print("=== РАСШИРЕННЫЙ A/B АНАЛИЗ ===")
-print(f"T-test: {formatted_results['ttest']}")
-print(f"KS-test: {formatted_results['kstest']}")
-print(f"PSI (стабильность групп): {formatted_results['psi']}")
-print(f"FDR-скорректированные результаты: {formatted_results['multitest']}")
 ```
 
-**Что изменилось:**
+**Архитектурные преимущества:**
 
-- Перешли от Shell к прямой композиции Executor'ов
-- Добавили PSI для проверки качества разбиения на группы
-- Изменили метод коррекции множественного тестирования на менее консервативный
-- Используем Reporter для извлечения результатов
+- **Переиспользование**: Используем стандартные компоненты
+- **Гибкость**: Добавляем только нужную функциональность
+- **Консистентность**: Сохраняется логика стандартного A/B теста
+- **Прозрачность**: Видны все этапы анализа
 
-**Результат:**
+### Сценарий 3: Создание кастомного Executor (Уровень 6 — Расширение)
 
-```
-T-test: p-value = 0.032, effect = 1.6%
-KS-test: p-value = 0.045, distribution differs
-PSI = 0.08 (группы сбалансированы, PSI < 0.1)
-FDR-скорректированные p-values: [0.038, 0.048]
-Рекомендация: Эффект значим, группы качественно сбалансированы
-```
-
-**Почему потребовался переход на уровень композиции:**
-
-- Нужен PSI анализ, который не включен в стандартный ABTest
-- Требуется другой метод коррекции множественного тестирования
-- Кастомизация набора выполняемых тестов
-
-### Сценарий 3: Кастомный анализ для специфической метрики (Уровень 6 — Расширение)
-
-**Бизнес-задача:** Продуктовая команда анализирует влияние изменений на конверсию в покупку, которая рассчитывается как
-отношение (ratio): покупки / уникальные пользователи. Стандартные тесты не учитывают специфику ratio метрик.
+**Бизнес-задача:** Data Science команда нуждается в специфическом статистическом тесте — Permutation Test — который
+не входит в стандартный набор HypEx.
 
 **Характеристики задачи:**
 
-- Специфический тип метрики (ratio: события/пользователи)
-- Нужен специализированный статистический тест с delta method
-- Стандартные Calculator'ы не покрывают потребность
-- Команда имеет статистическую экспертизу
+- Требуется новая функциональность
+- Нужна интеграция с существующей архитектурой
+- Планируется переиспользование в разных экспериментах
 
-**Решение — создание кастомного Calculator'а:**
+**Решение — создание кастомного Executor:**
 
 ```python
-from hypex.executors.calculator import Comparator
+from hypex.executors.base import StatHypothesisTesting
 from hypex.dataset import Dataset
 import numpy as np
-from scipy import stats
+from typing import Optional
 
-
-class RatioTest(Comparator):
+class PermutationTest(StatHypothesisTesting):
     """
-    Статистический тест для сравнения ratio метрик между группами.
-    Использует delta method для корректной оценки стандартной ошибки.
+    Permutation Test для сравнения групп без предположений о распределении.
     """
-
-    def __init__(self, alpha: float = 0.05, **kwargs):
-        super().__init__(**kwargs)
-        self.alpha = alpha
-
-    def _inner_function(self, control_data: Dataset, test_data: Dataset) -> dict:
+    
+    def __init__(self, 
+                 n_permutations: int = 10000,
+                 reliability: float = 0.05,
+                 key: str = ""):
+        self.n_permutations = n_permutations
+        super().__init__(reliability=reliability, key=key)
+    
+    @classmethod
+    def _inner_function(cls, 
+                       data: Dataset, 
+                       test_data: Dataset,
+                       n_permutations: int = 10000,
+                       reliability: float = 0.05) -> Dataset:
         """
-        Выполняет тест для ratio метрик.
+        Реализация permutation test.
+        """
+        # Извлекаем данные для двух групп
+        group_col = cls._get_grouping_column(data)
+        target_col = cls._get_target_column(test_data)
         
-        Ожидает колонки:
-        - events: количество событий (покупок)
-        - users: количество уникальных пользователей
-        """
-
-        # Извлечение данных
-        control_events = control_data['events'].sum()
-        control_users = control_data['users'].sum()
-        test_events = test_data['events'].sum()
-        test_users = test_data['users'].sum()
-
-        # Расчет ratio метрик
-        control_ratio = control_events / control_users if control_users > 0 else 0
-        test_ratio = test_events / test_users if test_users > 0 else 0
-
-        # Delta method для стандартной ошибки ratio
-        control_se = self._delta_method_se(control_events, control_users)
-        test_se = self._delta_method_se(test_events, test_users)
-
-        # Pooled standard error для разности
-        pooled_se = np.sqrt(control_se ** 2 + test_se ** 2)
-
-        # Z-test для разности ratio
-        if pooled_se > 0:
-            z_stat = (test_ratio - control_ratio) / pooled_se
-            p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
-        else:
-            z_stat = 0
-            p_value = 1.0
-
-        # Доверительный интервал для разности
-        diff = test_ratio - control_ratio
-        ci_margin = stats.norm.ppf(1 - self.alpha / 2) * pooled_se
-        ci_lower = diff - ci_margin
-        ci_upper = diff + ci_margin
-
-        return {
-            "control_ratio": control_ratio,
-            "test_ratio": test_ratio,
-            "ratio_difference": diff,
-            "relative_lift": (diff / control_ratio * 100) if control_ratio > 0 else 0,
-            "statistic": z_stat,
+        groups = data.df[group_col].unique()
+        if len(groups) != 2:
+            raise ValueError("Permutation test поддерживает только 2 группы")
+        
+        group1_data = test_data.df[data.df[group_col] == groups[0]][target_col]
+        group2_data = test_data.df[data.df[group_col] == groups[1]][target_col]
+        
+        # Наблюдаемая разность средних
+        observed_diff = group2_data.mean() - group1_data.mean()
+        
+        # Объединяем данные для перестановок
+        combined_data = np.concatenate([group1_data, group2_data])
+        n1, n2 = len(group1_data), len(group2_data)
+        
+        # Выполняем перестановки
+        permutation_diffs = []
+        np.random.seed(42)  # Для воспроизводимости
+        
+        for _ in range(n_permutations):
+            # Случайно перемешиваем данные
+            np.random.shuffle(combined_data)
+            perm_group1 = combined_data[:n1]
+            perm_group2 = combined_data[n1:]
+            
+            # Вычисляем разность для перестановки
+            perm_diff = perm_group2.mean() - perm_group1.mean()
+            permutation_diffs.append(perm_diff)
+        
+        # Вычисляем p-value (двусторонний тест)
+        permutation_diffs = np.array(permutation_diffs)
+        p_value = np.mean(np.abs(permutation_diffs) >= np.abs(observed_diff))
+        
+        # Формируем результат
+        return Dataset.from_dict({
+            "statistic": observed_diff,
             "p-value": p_value,
-            "pass": p_value < self.alpha,
-            "confidence_interval": [ci_lower, ci_upper],
-            "interpretation": self._interpret_results(p_value, diff, control_ratio)
-        }
+            "n_permutations": n_permutations,
+            "pass": p_value < reliability
+        })
 
-    def _delta_method_se(self, events: float, users: float) -> float:
-        """Вычисляет стандартную ошибку ratio через delta method"""
-        if users <= 0:
-            return 0
-
-        ratio = events / users
-        # Delta method: SE(X/Y) ≈ sqrt(Var(X)/Y² + X²*Var(Y)/Y⁴ - 2*X*Cov(X,Y)/Y³)
-        # Для Poisson процесса: Var(events) = events, Cov(events, users) ≈ 0
-        variance = (events / users ** 2) + (ratio ** 2 * users / users ** 2)  # Упрощенная формула
-        return np.sqrt(variance / users)  # Нормализация на размер выборки
-
-    def _interpret_results(self, p_value: float, diff: float, control_ratio: float) -> str:
-        """Генерирует текстовую интерпретацию результатов"""
-        if p_value >= self.alpha:
-            return "Нет статистически значимой разницы в конверсии"
-
-        if diff > 0:
-            lift_pct = (diff / control_ratio * 100) if control_ratio > 0 else 0
-            return f"Конверсия выше в тестовой группе на {lift_pct:.1f}% (улучшение)"
-        else:
-            drop_pct = abs(diff / control_ratio * 100) if control_ratio > 0 else 0
-            return f"Конверсия ниже в тестовой группе на {drop_pct:.1f}% (ухудшение)"
-
-
-# Создание эксперимента с кастомным тестом
-ratio_experiment = Experiment([
+# Использование в композиции
+advanced_ab_experiment = Experiment([
+    GroupSizes(),
+    GroupDifference(),
+    
     OnRoleExperiment([
-        GroupSizes(grouping_role=TreatmentRole()),
-
-        # Кастомный анализ ratio метрик
-        RatioTest(
-            grouping_role=TreatmentRole(),
-            alpha=0.05
-        ),
-
-        # Дополнительные стандартные тесты для validation
-        TTest(grouping_role=TreatmentRole()),  # Для проверки consistency
-
+        TTest(),           # Стандартный параметрический тест
+        KSTest(),          # Стандартный непараметрический тест
+        PermutationTest(   # Наш кастомный тест
+            n_permutations=20000,
+            reliability=0.01
+        )
     ], role=TargetRole()),
+    
+    ABAnalyzer(multitest_method="holm")
 ])
-
-# Подготовка данных для ratio анализа
-ratio_dataset = Dataset(
-    data=experiment_data,
-    roles={
-        'user_group': TreatmentRole(),
-        'conversion_events': TargetRole(),  # Количество покупок
-        'unique_users': TargetRole(),  # Количество уникальных пользователей
-        'revenue_per_user': TargetRole()  # Дополнительная метрика для t-test
-    }
-)
-
-# Выполнение анализа
-experiment_data = ExperimentData(ratio_dataset)
-results = ratio_experiment.execute(experiment_data)
 ```
 
-**Результат кастомного анализа:**
+**Архитектурные преимущества:**
 
-```
-=== RATIO METRICS АНАЛИЗ ===
-Control группа: 1247 покупок / 4520 пользователей = 27.6% конверсия
-Test группа: 1456 покупок / 4580 пользователей = 31.8% конверсия
-Difference: +4.2 п.п. (relative lift: +15.2%)
-Z-statistic: 3.24, p-value = 0.001 (высоко значимо)
-95% CI для разности: [1.7%, 6.7%]
-Интерпретация: Конверсия выше в тестовой группе на 15.2% (улучшение)
+- **Интеграция**: Кастомный Executor работает как стандартный
+- **Переиспользуемость**: Может использоваться в любых экспериментах
+- **Тестируемость**: Легко тестировать изолированно
+- **Расширяемость**: Базовый класс предоставляет всю инфраструктуру
 
-=== VALIDATION ===
-T-test на revenue per user: p-value = 0.018 (согласуется с ratio тестом)
-```
+### Сценарий 4: Комплексный многоэтапный анализ
 
-**Почему потребовался уровень расширения:**
-
-- Ratio метрики требуют специального подхода (delta method для SE)
-- Стандартные тесты дают некорректные результаты для отношений
-- Нужна доменная экспертиза для правильной статистической модели
-- Требуется кастомная интерпретация результатов (relative lift)
-
-**Преимущества архитектурного подхода:**
-
-- Новый Calculator легко интегрируется в существующие Experiment'ы
-- Следует всем конвенциям библиотеки (единый интерфейс, ExperimentData)
-- Можно комбинировать с стандартными компонентами для validation
-- Переиспользуется в других экспериментах с ratio метриками
-
-### Сценарий 4: Сложный многоэтапный matching анализ (Комбинация уровней)
-
-**Бизнес-задача:** Аналитическая команда исследует эффект маркетинговой кампании на retention пользователей. Данные
-observational (без рандомизации), поэтому нужен sophisticated matching анализ с проверкой качества и sensitivity
-анализом.
+**Бизнес-задача:** Исследовательская команда изучает эффект нового алгоритма рекомендаций на удержание пользователей. 
+Требуется полный цикл: от A/A валидации данных до matching анализа с sensitivity проверками.
 
 **Характеристики задачи:**
 
-- Многоэтапный процесс: подготовка → matching → валидация → анализ
-- Комбинация готовых решений и кастомных компонентов
-- Требования к quality assurance на каждом этапе
-- Нужна детальная диагностика и отчетность
+- Многоэтапный процесс анализа
+- Комбинация разных типов экспериментов
+- Сложная логика принятия решений
+- Потребность в детальной диагностике
 
-**Решение — комбинация Shell + Композиция + Расширение:**
+**Решение — комбинация всех уровней архитектуры:**
 
 ```python
-# Этап 1: Быстрая оценка с помощью Shell (базовый matching)
-initial_matching = Matching(
-    distance="mahalanobis",
-    bias_estimation=True,
-    quality_tests=["ttest", "kstest"]
-)
+# Этап 1: Валидация качества данных (Shell уровень)
+aa_validation = AATest(precision_mode=True, n_iterations=500)
+aa_results = aa_validation.execute(dataset)
 
-initial_results = initial_matching.execute(dataset)
-print(f"Базовое качество matching: {initial_results.quality_results}")
+if aa_results.aa_score.quality_level != "excellent":
+    print("Предупреждение: качество разбиения недостаточно высокое")
+    # Дополнительная диагностика...
 
-# Этап 2: Если качество неудовлетворительное - детальная настройка
-if initial_results.quality_results['overall_quality'] < 0.8:
+# Этап 2: Предварительный A/B тест (Композиция)
+preliminary_ab = Experiment([
+    GroupSizes(), GroupDifference(),
+    OnRoleExperiment([TTest(), KSTest(), PermutationTest()], role=TargetRole()),
+    ABAnalyzer(multitest_method="fdr_bh")
+])
 
-    # Кастомный preprocessor для улучшения matching
-    class AdvancedPreprocessor(Transformer):
-        """Продвинутая предобработка для улучшения quality matching'а"""
+preliminary_results = preliminary_ab.execute(ExperimentData(dataset))
 
-        def _inner_function(self, data: Dataset) -> Dataset:
-            # Логарифмирование скошенных переменных
-            log_features = ['income', 'session_duration']
-            for feature in log_features:
-                data[f'{feature}_log'] = np.log1p(data[feature])
+# Этап 3: Решение о дальнейшем анализе
+ab_analyzer_id = preliminary_results.get_ids(ABAnalyzer)[0]
+ab_summary = preliminary_results.analysis_tables[ab_analyzer_id]
 
-            # Создание interaction features
-            data['age_income_interaction'] = data['age'] * data['income']
+if ab_summary["overall_decision"] in ["ship", "monitor"]:
+    print("Обнаружен эффект. Переходим к matching анализу для causal inference.")
+    
+    # Этап 4: Matching анализ с кастомными компонентами
+    matching_analysis = Experiment([
+        # Подготовка данных
+        OutliersFilter(lower_percentile=0.05, upper_percentile=0.95),
+        NaFiller(method="ffill"),
+        DummyEncoder(),
 
-            # Binning категориальных переменных с малыми группами
-            rare_categories = data['device_type'].value_counts()
-            data['device_type_grouped'] = data['device_type'].map(
-                lambda x: x if rare_categories[x] > 50 else 'other'
-            )
+        # Вычисление расстояний
+        MahalanobisDistance(grouping_role=TreatmentRole()),
 
-            return data
+        # Поиск пар
+        FaissNearestNeighbors(n_neighbors=1),
 
+        # Оценка качества
+        Bias(grouping_role=TreatmentRole()),
+        MatchingMetrics(metric="ate"),
 
-    # Кастомный качественный анализ
+        # Статистические тесты
+        TTest(compare_by="groups"),
+        KSTest(compare_by="groups"),
+
+        # Анализ результатов
+        MatchingAnalyzer()
+    ])
+    
+    matching_results = matching_analysis.execute(ExperimentData(dataset))
+    
+    # Этап 5: Sensitivity анализ (Расширение)
     class SensitivityAnalyzer(Executor):
-        """Sensitivity анализ для оценки робастности результатов"""
-
+        """Анализ чувствительности результатов к различным параметрам matching."""
+        
         def execute(self, data: ExperimentData) -> ExperimentData:
-            matched_data = data.additional_fields['matched_pairs']
-
-            # Анализ с разными distance thresholds
-            thresholds = [0.1, 0.2, 0.3, 0.4, 0.5]
+            # Тестируем разные пороги matching
             sensitivity_results = []
-
-            for threshold in thresholds:
-                # Фильтруем пары по качеству matching
-                high_quality_pairs = matched_data[
-                    matched_data['match_distance'] <= threshold
-                    ]
-
-                # Вычисляем эффект на filtered данных
-                effect = self._calculate_treatment_effect(high_quality_pairs)
-
+            
+            for threshold in [0.1, 0.2, 0.3, 0.4, 0.5]:
+                # Повторяем matching с разными порогами
+                threshold_experiment = Experiment([
+                    FaissNearestNeighbors(threshold=threshold),
+                    MatchingMetrics(metric="ate"),
+                    TTest(compare_by="groups")
+                ])
+                
+                threshold_data = ExperimentData(data.ds)
+                threshold_result = threshold_experiment.execute(threshold_data)
+                
+                # Извлекаем ключевые метрики
+                metrics_id = threshold_result.get_ids(MatchingMetrics)[0]
+                ate_estimate = threshold_result.analysis_tables[metrics_id]["ate"]
+                
                 sensitivity_results.append({
-                    'threshold': threshold,
-                    'n_pairs': len(high_quality_pairs),
-                    'treatment_effect': effect,
-                    'coverage': len(high_quality_pairs) / len(matched_data)
+                    "threshold": threshold,
+                    "ate_estimate": ate_estimate,
+                    "n_matched": len(threshold_result.additional_fields.get("matched_indices", []))
                 })
-
+            
             # Сохраняем результаты sensitivity анализа
-            sensitivity_dataset = Dataset(data=pd.DataFrame(sensitivity_results))
+            sensitivity_dataset = Dataset.from_records(sensitivity_results)
             return data.set_value(
                 space=ExperimentDataEnum.analysis_tables,
                 executor_id=self.id,
                 value=sensitivity_dataset
             )
-
-
-    # Композиция продвинутого matching pipeline
-    advanced_matching = Experiment([
-        # Этап 1: Продвинутая предобработка
-        AdvancedPreprocessor(),
-        OutliersFilter(method="isolation_forest"),
-        NaFiller(method="knn"),
-
-        # Этап 2: Matching с несколькими алгоритмами
-        MahalanobisDistance(grouping_role=TreatmentRole()),
-        FaissNearestNeighbors(n_neighbors=3),  # Больше кандидатов
-
-        # Этап 3: Выбор лучших пар
-        MatchingQualityFilter(min_quality_score=0.8),
-
-        # Этап 4: Анализ качества
-        Bias(grouping_role=TreatmentRole()),
-        SMD(grouping_role=TreatmentRole()),  # Standardized Mean Difference
-
-        # Этап 5: Основной анализ
-        OnRoleExperiment([
-            TTest(grouping_role=TreatmentRole()),
-            KSTest(grouping_role=TreatmentRole()),
-        ], role=TargetRole()),
-
-        # Этап 6: Sensitivity анализ
-        SensitivityAnalyzer(),
-
-        # Этап 7: Итоговый анализ
-        MatchingAnalyzer()
-    ])
-
-    # Выполнение продвинутого анализа
-    final_results = advanced_matching.execute(ExperimentData(dataset))
-
-
-# Этап 3: Детальная отчетность с кастомным Reporter
-class ComprehensiveMatchingReporter(DictReporter):
-    """Подробный отчет по всем этапам matching анализа"""
-
-    def report(self, data: ExperimentData) -> dict:
-        base_results = super().report(data)
-
-        # Добавляем sensitivity анализ
-        sensitivity_data = data.analysis_tables.get('SensitivityAnalyzer╤╤')
-        if sensitivity_data is not None:
+    
+    # Запуск sensitivity анализа
+    sensitivity_analyzer = SensitivityAnalyzer()
+    final_results = sensitivity_analyzer.execute(matching_results)
+    
+    # Этап 6: Comprehensive отчетность
+    class ComprehensiveMatchingReporter(DictReporter):
+        """Comprehensive reporter для всего анализа."""
+        
+        def report(self, data: ExperimentData) -> dict:
+            base_results = super().report(data)
+            
+            # Добавляем результаты sensitivity анализа
+            sensitivity_id = data.get_ids(SensitivityAnalyzer)[0]
+            sensitivity_data = data.analysis_tables[sensitivity_id]
+            
             base_results['sensitivity_analysis'] = {
                 'stability_assessment': self._assess_stability(sensitivity_data),
                 'robust_effect_estimate': self._robust_estimate(sensitivity_data),
                 'recommended_threshold': self._recommend_threshold(sensitivity_data)
             }
 
-        # Добавляем качественную оценку
-        base_results['quality_assessment'] = self._comprehensive_quality_check(data)
+            # Добавляем качественную оценку
+            base_results['quality_assessment'] = self._comprehensive_quality_check(data)
 
-        return base_results
+            return base_results
+        
+        def _assess_stability(self, data: Dataset) -> str:
+            # Логика оценки стабильности результатов
+            estimates = data.df["ate_estimate"].values
+            cv = np.std(estimates) / np.mean(estimates)  # Coefficient of variation
+            
+            if cv < 0.1:
+                return "highly_stable"
+            elif cv < 0.2:
+                return "stable"
+            else:
+                return "unstable"
+        
+        def _robust_estimate(self, data: Dataset) -> float:
+            # Робастная оценка (медиана)
+            return data.df["ate_estimate"].median()
+        
+        def _recommend_threshold(self, data: Dataset) -> float:
+            # Рекомендуемый порог (баланс качества и покрытия)
+            data_df = data.df
+            # Простая эвристика: максимизируем произведение покрытия и обратной дисперсии
+            coverage = data_df["n_matched"] / data_df["n_matched"].max()
+            stability = 1 / (data_df["ate_estimate"].rolling(3).std().fillna(1))
+            score = coverage * stability
+            
+            return data_df.loc[score.idxmax(), "threshold"]
+        
+        def _comprehensive_quality_check(self, data: ExperimentData) -> str:
+            # Комплексная оценка качества всего анализа
+            # ... логика проверки всех компонентов
+            return "EXCELLENT"  # Упрощено
 
+    comprehensive_reporter = ComprehensiveMatchingReporter()
+    final_report = comprehensive_reporter.report(final_results)
 
-comprehensive_reporter = ComprehensiveMatchingReporter()
-final_report = comprehensive_reporter.report(final_results)
+else:
+    print("Эффект не обнаружен или слишком слаб для matching анализа.")
 ```
 
 **Результат многоэтапного анализа:**
@@ -3769,90 +2716,34 @@ advanced_experiment = Experiment([
 **Ключевой инсайт:** Архитектура HypEx позволяет начать с простого решения и органично наращивать сложность без
 переписывания кода. Каждый уровень строится на предыдущем, добавляя необходимую функциональность.
 
-### Паттерны выбора подхода
+### Руководство по выбору подходящего уровня
 
-#### Матрица принятия решений
+#### Принципы принятия решений
 
-| Критерий                      | Shell (Уровень 4)            | Композиция (Уровень 5)   | Расширение (Уровень 6) |
-|-------------------------------|------------------------------|--------------------------|------------------------|
-| **Стандартность задачи**      | Типовая (A/B, A/A, Matching) | Нестандартная комбинация | Уникальная методология |
-| **Экспертиза команды**        | Базовая                      | Средняя                  | Высокая                |
-| **Временные рамки**           | Срочно (часы)                | Умеренно (дни)           | Не критично (недели)   |
-| **Требования к кастомизации** | Минимальные                  | Средние                  | Максимальные           |
-| **Частота использования**     | Разовая или регулярная       | Регулярная               | Проектная              |
+**Используйте Shell (Уровень 4), когда:**
 
-#### Типичные сигналы для перехода на следующий уровень
+- Задача полностью покрывается стандартным экспериментом
+- Команда не имеет глубокой экспертизы в статистике
+- Нужен быстрый и надежный результат
+- Требуется production-ready решение
 
-**Shell → Композиция:**
+**Переходите на Композицию (Уровень 5), когда:**
 
-- "Нужно добавить еще один тест"
-- "Хотим изменить порядок выполнения"
-- "Требуется нестандартная комбинация методов"
-- "Shell делает не совсем то, что нужно"
+- Нужны дополнительные тесты или метрики
+- Требуется нестандартная последовательность операций
+- Необходимо объединить несколько типовых анализов
+- Хотите больше контроля над процессом
 
-**Композиция → Расширение:**
+**Создавайте Расширения (Уровень 6), когда:**
 
-- "Нужного Executor'а нет в библиотеке"
-- "Требуется интеграция с внешней библиотекой"
-- "Нужна доменно-специфическая логика"
-- "Стандартные методы не подходят для наших данных"
+- Требуется функциональность, отсутствующая в библиотеке
+- У команды есть экспертиза для создания кастомных методов
+- Планируется многократное переиспользование
+- Нужна интеграция с внешними библиотеками
 
-#### Антипаттерны и их решения
+#### Критерии качественного решения
 
-**Антипаттерн 1: Преждевременная оптимизация**
-
-```python
-# Плохо: сразу создавать сложный custom Executor
-class ComplexCustomAnalyzer(Executor):
-
-
-# 200 строк сложной логики для простой задачи
-
-# Хорошо: начать с Shell и усложнять по необходимости
-ab_test = ABTest()  # Сначала проверить, что базовое решение не подходит
-```
-
-**Антипаттерн 2: Игнорирование стандартных решений**
-
-```python
-# Плохо: переизобретать велосипед
-custom_experiment = Experiment([
-    ManualGroupSplit(),  # Вместо стандартного AASplitter
-    ManualTTest(),  # Вместо стандартного TTest
-    ManualReporting()  # Вместо стандартных Reporter'ов
-])
-
-# Хорошо: использовать стандартные блоки где возможно
-experiment = Experiment([
-    AASplitter(),  # Стандартный, надежный, протестированный
-    OnRoleExperiment([TTest()], role=TargetRole()),
-    CustomSpecificAnalyzer()  # Только то, что действительно уникально
-])
-```
-
-**Антипаттерн 3: Монолитные кастомные решения**
-
-```python
-# Плохо: один большой Executor делает все
-class MonolithicAnalyzer(Executor):
-    def execute(self, data):
-# Предобработка + анализ + отчетность в одном классе
-# Трудно тестировать, переиспользовать, поддерживать
-
-
-# Хорошо: разбить на композируемые части
-experiment = Experiment([
-    CustomPreprocessor(),  # Одна ответственность
-    StandardAnalysis(),  # Переиспользуемый компонент
-    CustomReporter()  # Отдельный форматтер
-])
-```
-
-### Выводы и рекомендации
-
-**Принцип прогрессивного усложнения:**
-Всегда начинайте с самого простого решения, которое решает задачу. HypEx позволяет органично развивать решение по мере
-роста требований.
+HypEx позволяет органично развивать решение по мере роста требований.
 
 **Правило 90-9-1:**
 
@@ -3871,3 +2762,132 @@ experiment = Experiment([
 Архитектура HypEx спроектирована так, чтобы естественным образом направлять разработчиков к качественным решениям,
 предоставляя правильные абстракции для каждого уровня сложности.
 
+## Заключение
+
+### Ключевые архитектурные достижения
+
+Архитектура HypEx успешно решает фундаментальную проблему разрыва между простотой использования и гибкостью статистических инструментов. Ключевые достижения:
+
+**1. Многоуровневая абстракция как архитектурный принцип**
+
+Система 8 уровней абстракции позволяет пользователям работать на комфортном уровне сложности, при этом сохраняя возможность перехода на более детальные уровни по мере роста потребностей. Это обеспечивает:
+- Низкий порог входа для начинающих
+- Неограниченную гибкость для экспертов
+- Естественную эволюцию решений
+
+**2. Композиция как основа расширяемости**
+
+Принцип "композиция над наследованием" реализован последовательно на всех уровнях:
+- Executor'ы как атомарные операции
+- Experiment'ы как оркестраторы
+- Shell'ы как готовые решения
+- Каждый компонент может быть заменен или дополнен
+
+**3. Единый поток данных через ExperimentData**
+
+ExperimentData служит универсальной шиной данных, обеспечивая:
+- Прозрачность всех промежуточных результатов
+- Возможность отладки на любом этапе
+- Простую интеграцию новых компонентов
+- Воспроизводимость экспериментов
+
+### Принципы, выдержавшие проверку практикой
+
+**Разделение ответственности**
+
+Четкое разделение между вычислениями (Calculator'ы), оркестрацией (Experiment'ы), анализом (Analyzer'ы) и представлением (Reporter'ы) обеспечивает:
+- Простоту тестирования
+- Легкость модификации
+- Возможность независимого развития компонентов
+
+**Backend-агностичность через Extension Framework**
+
+Разделение бизнес-логики и технических деталей реализации позволяет:
+- Использовать оптимальные инструменты для каждого типа данных
+- Добавлять новые backend'ы без изменения core логики
+- Изолировать внешние зависимости
+
+**Кураторский подход к результатам**
+
+Система Output'ов и Reporter'ов превращает технические результаты в business-ready решения:
+- 90% пользователей получают готовые выводы
+- 10% экспертов имеют доступ к детальным данным
+- Консистентная интерпретация результатов
+
+### Архитектурные паттерны HypEx
+
+**Паттерн "Эволюционного усложнения"**
+
+Возможность начать с простого Shell'а и постепенно добавлять сложность:
+```
+Shell → Композиция → Расширение → Модификация
+```
+
+**Паттерн "Декомпозиции сложности"**
+
+Разбиение сложных операций на цепочки простых:
+```
+Сложный анализ = Preprocessing + Tests + Analysis + Reporting
+```
+
+**Паттерн "Полиморфной замещаемости"**
+
+Любой компонент может быть заменен на альтернативную реализацию:
+```
+TTest ← → PermutationTest ← → BootstrapTest
+```
+
+### Практические выводы для разработчиков
+
+**Выбор правильного уровня абстракции**
+
+- Начинайте с Shell'ов для стандартных задач
+- Переходите к композиции при нестандартных требованиях
+- Создавайте расширения только при необходимости многократного использования
+
+**Принципы качественного кода в HypEx**
+
+1. **Следуйте правилу 90-9-1**: большинство задач должно решаться стандартными инструментами
+2. **Предпочитайте композицию наследованию**: комбинируйте готовые блоки
+3. **Тестируйте на уровне компонентов**: каждый Executor должен быть протестирован изолированно
+4. **Документируйте кастомные решения**: нестандартные компоненты требуют подробного описания
+
+**Архитектурные anti-patterns**
+
+- Создание monolithic Executor'ов, выполняющих множество задач
+- Прямые зависимости между Executor'ами
+- Обход системы ролей при работе с данными
+- Игнорирование Extension Framework при работе с внешними библиотеками
+
+### Направления развития архитектуры
+
+**Масштабируемость**
+
+- Поддержка распределенных вычислений через новые backend'ы
+- Оптимизация для больших данных
+- Асинхронное выполнение Executor'ов
+
+**Интеграция**
+
+- Расширение Extension Framework для новых ML библиотек
+- Интеграция с workflow системами (Airflow, Prefect)
+- API для интеграции с внешними системами
+
+**Пользовательский опыт**
+
+- Интеллектуальные рекомендации по выбору методов
+- Автоматическая диагностика проблем в данных
+- Интерактивные визуализации результатов
+
+### Философия архитектурных решений
+
+HypEx демонстрирует, что хорошая архитектура должна быть:
+
+**Приспособляемой** — легко адаптироваться к изменяющимся требованиям
+**Интуитивной** — естественно направлять пользователей к правильным решениям  
+**Прозрачной** — позволять понимать и контролировать происходящие процессы
+**Расширяемой** — предоставлять четкие точки для добавления новой функциональности
+
+Архитектура HypEx служит примером того, как сложная предметная область (статистический анализ) может быть организована в интуитивно понятную и мощную систему через правильное применение принципов объектно-ориентированного проектирования и многоуровневой абстракции.
+
+Успех HypEx в решении задач статистического анализа демонстрирует универсальность этих архитектурных принципов и их применимость к другим сложным предметным областям.
