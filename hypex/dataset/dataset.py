@@ -783,7 +783,15 @@ class ExperimentData:
     ) -> ExperimentData:
         # Handle additional fields
         if space == ExperimentDataEnum.additional_fields:
-            if not isinstance(value, Dataset) or len(value.columns) == 1:
+            if not isinstance(value, Dataset):
+                self.additional_fields = self.additional_fields.add_column(
+                    data=value, role={executor_id: role}
+                )
+            elif len(value.columns) == 1:
+                role = role[0] if isinstance(role, list) else role
+                role = list(role.values())[0] if isinstance(role, dict) else role
+                executor_id = executor_id[0] if isinstance(executor_id, list) else executor_id
+                executor_id = list(executor_id.keys())[0] if isinstance(executor_id, dict) else executor_id
                 self.additional_fields = self.additional_fields.add_column(
                     data=value, role={executor_id: role}
                 )
