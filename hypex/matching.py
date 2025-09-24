@@ -6,6 +6,7 @@ from .analyzers.matching import MatchingAnalyzer
 from .comparators import KSTest, TTest
 from .comparators.distances import MahalanobisDistance
 from .dataset import AdditionalMatchingRole, FeatureRole, TargetRole, TreatmentRole
+from .encoders.encoders import DummyEncoder
 from .executor import Executor
 from .experiments import GroupExperiment
 from .experiments.base import Experiment, OnRoleExperiment
@@ -76,6 +77,7 @@ class Matching(ExperimentShell):
         faiss_mode: Literal["base", "fast", "auto"] = "auto",
         n_neighbors: int = 1,
         weights: dict[str, float] | None = None,
+        encode_categories: bool = True,
     ) -> Experiment:
         """Creates an experiment configuration with specified matching parameters.
 
@@ -159,21 +161,15 @@ class Matching(ExperimentShell):
                     role=FeatureRole(),
                 )
             ]
+        executors = executors if distance == "l2" else [distance_mapping[distance], *executors]
+        executors = executors if not encode_categories else [DummyEncoder(), *executors]
         return (
             Experiment(
-                executors=(
-                    executors
-                    if distance == "l2"
-                    else [distance_mapping[distance], *executors]
-                )
+                executors=executors
             )
             if not group_match
             else GroupExperiment(
-                executors=(
-                    executors
-                    if distance == "l2"
-                    else [distance_mapping[distance], *executors]
-                ),
+                executors=executors,
                 reporter=MatchingDatasetReporter(),
             )
         )
@@ -191,6 +187,7 @@ class Matching(ExperimentShell):
         faiss_mode: Literal["base", "fast", "auto"] = "auto",
         n_neighbors: int = 1,
         weights: dict[str, float] | None = None,
+        encode_categories: bool = True,
     ):
         super().__init__(
             experiment=self._make_experiment(
@@ -202,6 +199,7 @@ class Matching(ExperimentShell):
                 faiss_mode,
                 n_neighbors,
                 weights,
+                encode_categories,
             ),
             output=MatchingOutput(GroupExperiment if group_match else MatchingAnalyzer),
         )

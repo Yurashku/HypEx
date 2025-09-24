@@ -12,6 +12,7 @@ from ..dataset import (
     FeatureRole,
     GroupingRole,
     TargetRole,
+    AdditionalFeatureRole,
 )
 from ..executor import Calculator
 from ..extensions.scipy_linalg import CholeskyExtension, InverseExtension
@@ -70,7 +71,9 @@ class MahalanobisDistance(Calculator):
 
     def _get_fields(self, data: ExperimentData):
         group_field = data.field_search(self.grouping_role)
-        target_fields = data.field_search(FeatureRole(), search_types=self.search_types)
+        target_fields = data.field_search(
+            [FeatureRole(), AdditionalFeatureRole()], search_types=self.search_types
+        )
         return group_field, target_fields
 
     @property
@@ -142,11 +145,12 @@ class MahalanobisDistance(Calculator):
         else:
             grouping_data = None
         t_data = deepcopy(data.ds)
-        if target_fields[1] not in t_data.columns:
-            t_data = t_data.add_column(
-                data.additional_fields[target_fields[1]],
-                role={target_fields[1]: TargetRole()},
-            )
+        for field in target_fields:
+            if field not in t_data.columns:
+                t_data = t_data.add_column(
+                    data.additional_fields[field],
+                    role={field: TargetRole()},
+                )
         compare_result = self.calc(
             data=t_data,
             group_field=group_field,
