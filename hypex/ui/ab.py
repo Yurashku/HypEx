@@ -11,6 +11,7 @@ from .base import Output
 class ABOutput(Output):
     multitest: Union[Dataset, str]
     sizes: Dataset
+    variance_reductions: Dataset | None
 
     def __init__(self):
         self._groups = []
@@ -58,8 +59,24 @@ class ABOutput(Output):
             self._groups, role={"group": StatisticRole()}
         )
 
+    def _extract_variance_reductions(self, experiment_data: ExperimentData):
+        """Extract variance reduction data from additional_fields."""
+        variance_cols = [col for col in experiment_data.additional_fields.columns if col.endswith('_variance_reduction')]
+        if variance_cols:
+            self.variance_reductions = experiment_data.additional_fields[variance_cols]
+        else:
+            self.variance_reductions = None
+
+    @property
+    def variance_reduction_report(self) -> Dataset | str:
+        """Get variance reduction report for CUPED/CUPAC transformations."""
+        if hasattr(self, '_experiment_data'):
+            return self.resume_reporter.report_variance_reductions(self._experiment_data)
+        return "No experiment data available."
+
     def extract(self, experiment_data: ExperimentData):
         super().extract(experiment_data)
         self._extract_differences(experiment_data)
         self._extract_multitest_result(experiment_data)
         self._extract_sizes(experiment_data)
+        self._extract_variance_reductions(experiment_data)
