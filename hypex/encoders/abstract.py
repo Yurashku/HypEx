@@ -31,8 +31,8 @@ class Encoder(Calculator):
         return [CategoricalTypes]
 
     def _get_ids(self, col_name):
-        col_id = f"{NAME_BORDER_SYMBOL}{col_name}{NAME_BORDER_SYMBOL}"
-        return col_id
+        self.key = f"{NAME_BORDER_SYMBOL}{col_name}{NAME_BORDER_SYMBOL}"
+        return self.id
 
     def _ids_to_names(self, col_names: list[str]):
         return {col_name: self._get_ids(col_name) for col_name in col_names}

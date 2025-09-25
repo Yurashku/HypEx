@@ -267,8 +267,7 @@ class Bias(GroupOperator):
     def calc_coefficients(X: Dataset, Y: Dataset) -> list[float]:
         X_l = Dataset.create_empty(roles={"temp": InfoRole()}, index=X.index).fillna(1)
         X = X_l.append(X, axis=1).data.values
-        res = np.linalg.lstsq(X, Y.data.values, rcond=-1)[0][1:]
-        return res
+        return np.linalg.lstsq(X, Y.data.values, rcond=-1)[0][1:]
 
     @staticmethod
     def calc_bias(
