@@ -287,7 +287,6 @@ class Bias(GroupOperator):
         features_fields: list[str] | None = None,
         **kwargs,
     ) -> dict:
-        print(test_data.data.head())
         if target_fields is None or features_fields is None or test_data is None:
             raise NoneArgumentError(
                 ["target_fields", "features_fields", "test_data"], "bias_estimation"
