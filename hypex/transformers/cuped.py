@@ -35,7 +35,12 @@ class CUPEDTransformer(Transformer):
             
             std_y = result[target_feature].std()
             std_x = result[pre_target_feature].std()
-            theta = cov_xy / (std_y * std_x)
+            
+            # Handle zero variance or NaN case (single observation)
+            if std_y == 0 or std_x == 0 or std_y != std_y or std_x != std_x:
+                theta = 0
+            else:
+                theta = cov_xy / (std_y * std_x)
             pre_target_mean = result[pre_target_feature].mean()
             new_values_ds = result[target_feature] - (result[pre_target_feature] - pre_target_mean) * theta
             result = result.add_column(
