@@ -14,9 +14,11 @@ def matching_data():
             "user_id": InfoRole(int),
             "treat": TreatmentRole(int),
             "post_spends": TargetRole(float),
+            "gender": FeatureRole(str),
+            "pre_spends": FeatureRole(float),
+            "industry": FeatureRole(str),
         },
         data="examples/tutorials/data.csv",
-        default_role=FeatureRole(),
     )
     return data.fillna(method="bfill")
 
@@ -51,7 +53,6 @@ def get_causal_att_and_se(dataset: Dataset):
     return float(cm.estimates["matching"]["att"]), float(cm.estimates["matching"]["att_se"])
 
 
-
 def compute_pvalue(effect: float, std_error: float) -> float:
     if std_error == 0:
         return 0.0
@@ -77,16 +78,20 @@ def test_matching_pvalue_consistency_with_causalinference(matching_data):
         causal_att, causal_se = get_causal_att_and_se(matching_data)
         causal_pval = compute_pvalue(causal_att, causal_se)
 
-        matcher = Matching(distance=distance, n_neighbors=k)
+        matcher = Matching(
+            distance=distance,
+            n_neighbors=k,
+            quality_tests=["t-test", "ks-test"]
+        )
         result = matcher.execute(matching_data)
 
         hypex_pval = result.resume.data.loc[effect.upper(), "P-value"]
 
         diff = abs(hypex_pval - causal_pval)
         assert diff <= 0.05, (
-            f"  distance={distance}, k={k}, effect={effect}:\n"
+            f"p-value не согласуется в конфигурации distance={distance}, k={k}, effect={effect}:\n"
             f"  hypex: {hypex_pval:.6f}\n"
-            f"  causalinference: {causal_pval:.6f}\n"
+            f"  causalinference (рассчитан): {causal_pval:.6f}\n"
             f"  разница: {diff:.6f} > 0.05"
         )
 
@@ -97,3 +102,9 @@ def test_matching_pvalue_consistency_with_causalinference(matching_data):
                 lambda x: pd.api.types.is_numeric_dtype(x)
             )
         ), "Есть нечисловые колонки!"
+
+        if hasattr(result, "quality_tests_results"):
+            for test_name, test_df in result.quality_tests_results.items():
+                assert all(
+                    test_df["p-value"].apply(lambda x: isinstance(x, (int, float)))
+                ), f"Некорректные p-value в quality_test {test_name}"
