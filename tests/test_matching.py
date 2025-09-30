@@ -89,7 +89,7 @@ def test_matching_pvalue_consistency_with_causalinference(matching_data):
 
         diff = abs(hypex_pval - causal_pval)
         assert diff <= 0.05, (
-            f"p-value не согласуется в конфигурации distance={distance}, k={k}, effect={effect}:\n"
+            f"  distance={distance}, k={k}, effect={effect}:\n"
             f"  hypex: {hypex_pval:.6f}\n"
             f"  causalinference (рассчитан): {causal_pval:.6f}\n"
             f"  разница: {diff:.6f} > 0.05"
