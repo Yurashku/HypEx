@@ -132,7 +132,7 @@ def test_feature_subsets_vs_causalinference(matching_data):
         pval_hypex = result_hypex.resume.data.loc[effect.upper(), "P-value"]
 
         if distance == "mahalanobis":
-            pval_causal = get_causalinference_pvalue(matching_data.data, feature_subset, k)
+            pval_causal = get_causalinference_pvalue(matching_data.data, feature_subset, k, effect=effect)
             rel_diff = calculate_relative_difference(pval_hypex, pval_causal)
         else:
             pval_causal = np.nan
@@ -147,7 +147,7 @@ def test_feature_subsets_vs_causalinference(matching_data):
         assert 0 <= pval_hypex <= 1
         if not pd.isna(pval_causal):
             assert 0 <= pval_causal <= 1
-            assert rel_diff < 0.5, "Relative difference is too high"
+            assert rel_diff <= 0.05, f"Relative difference is too high: {rel_diff:.2%} for features {feature_subset}"
 
     pbar.close()
 
@@ -174,8 +174,8 @@ def test_matching_quality_tests_all(matching_data):
     pbar.close()
 
 
-def test_matching_custom_weights_vs_causalinference(matching_data):
-    pbar = tqdm(total=1, desc="Custom weights comparison", unit="test")
+def test_matching_custom_weights_functionality(matching_data):
+    pbar = tqdm(total=1, desc="Custom weights functionality test", unit="test")
     
     features = ["pre_spends", "gender", "industry", "signup_month", "age"]
     weights = {
@@ -184,23 +184,26 @@ def test_matching_custom_weights_vs_causalinference(matching_data):
     }
     k = 1
     
-    assert abs(sum(weights.values()) - 1.0) < 1e-6
+    assert abs(sum(weights.values()) - 1.0) < 1e-6, "Weights must sum to 1.0"
 
     matcher_hypex = Matching(n_neighbors=k, weights=weights, quality_tests=["t-test"])
     result_hypex = matcher_hypex.execute(matching_data)
     pval_hypex = result_hypex.resume.data.loc["ATT", "P-value"]
     
-    pval_causal = get_causalinference_pvalue(matching_data.data, features, k)
+    pval_causal = get_causalinference_pvalue(matching_data.data, features, k, effect="att")
 
     rel_diff = calculate_relative_difference(pval_hypex, pval_causal)
     
     pbar.set_postfix({
-        'hypex': f"{pval_hypex:.4f}", 'causal': f"{pval_causal:.4f}", 'diff': f"{rel_diff:.2%}"
+        'hypex': f"{pval_hypex:.4f}", 
+        'causal_mahalanobis': f"{pval_causal:.4f}", 
+        'diff': f"{rel_diff:.2%}"
     })
     pbar.update(1)
     
     assert 0 <= pval_hypex <= 1
     if not pd.isna(pval_causal):
         assert 0 <= pval_causal <= 1
+        assert rel_diff <= 0.05, f"Relative difference is too high: {rel_diff:.2%} (Weighted L2 vs Mahalanobis)"
         
     pbar.close()
