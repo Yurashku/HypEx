@@ -41,7 +41,13 @@ class ABTest(ExperimentShell):
         ab_test = ABTest(
             additional_tests=[ABTestTypesEnum.t_test, ABTestTypesEnum.chi2_test],
             multitest_method=ABNTestMethodsEnum.bonferroni,
-            cuped_features={"target_feature": "pre_target_feature"}
+            cuped_features={"target_feature": "pre_target_feature"},
+            cupac_features={
+                "revenue": {
+                    "pre_target": "revenue_before", 
+                    "covariates": ["age", "gender", "prev_purchases"]
+                }
+            }
         )
         results = ab_test.execute(data)
     """
@@ -53,7 +59,7 @@ class ABTest(ExperimentShell):
         ),
         multitest_method: ABNTestMethodsEnum | None,
         cuped_features: dict[str, str] | None,
-        cupac_features: dict[str, list[str]] | None,
+        cupac_features: dict[str, dict[str, str | list[str]]] | None,
         cupac_model: str | list[str] | None,
     ) -> Experiment:
         test_mapping: dict[str, Executor] = {
@@ -107,7 +113,7 @@ class ABTest(ExperimentShell):
         multitest_method: ABNTestMethodsEnum | None = ABNTestMethodsEnum.holm,
         t_test_equal_var: bool | None = None,
         cuped_features: dict[str, str] | None = None,
-        cupac_features: dict[str, list[str]] | None = None,
+        cupac_features: dict[str, dict[str, str | list[str]]] | None = None,
         cupac_model: str | list[str] | None = None,
         ):
         """
@@ -116,7 +122,7 @@ class ABTest(ExperimentShell):
             multitest_method: Method to use for multiple testing correction. Valid options are ABNTestMethodsEnum.bonferroni, ABNTestMethodsEnum.sidak, etc. Defaults to ABNTestMethodsEnum.holm.
             t_test_equal_var: Whether to use equal variance in t-test (optional).
             cuped_features: dict[str, str] — Dictionary {target_feature: pre_target_feature} for CUPED. Only dict is allowed.
-            cupac_features: dict[str, list[str]] — Parameters for CUPAC, e.g. {"target1": ["cov1", "cov2"], ...}.
+            cupac_features: dict[str, dict[str, str | list[str]]] — Parameters for CUPAC. Format: {"target_column": {"pre_target": "pre_target_column", "covariates": ["cov1", "cov2", ...]}}. The model predicts pre_target using covariates, then subtracts prediction from target_column.
             cupac_model: str | list[str] — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try. If None, all available models will be tried and the best will be selected by variance reduction.
         """
         super().__init__(

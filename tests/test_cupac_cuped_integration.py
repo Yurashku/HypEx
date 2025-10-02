@@ -60,7 +60,7 @@ class TestCUPACCUPEDIntegration:
     def test_cupac_cuped_both_applied(self, comprehensive_data):
         """Test applying both CUPAC and CUPED simultaneously."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cuped_features={'y': 'y0_lag_1'},
             cupac_model='linear'
         )
@@ -87,7 +87,7 @@ class TestCUPACCUPEDIntegration:
         data_copy = data_copy.add_column(data=y2, role={'y2': TargetRole()})
         
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag']}},
             cuped_features={'y2': 'y0_lag_1'},
             cupac_model='linear'
         )
@@ -105,7 +105,7 @@ class TestCUPACCUPEDIntegration:
     def test_cupac_cuped_same_target_different_features(self, comprehensive_data):
         """Test CUPAC and CUPED on same target with different pre-features."""
         test = ABTest(
-            cupac_features={'y': ['X1_lag', 'X2_lag']},  # Different features
+            cupac_features={'y': {'pre_target': 'X1_lag', 'covariates': ['X2_lag']}},  # Different features
             cuped_features={'y': 'y0_lag_1'},           # Different feature
             cupac_model='linear'
         )
@@ -123,7 +123,7 @@ class TestCUPACCUPEDIntegration:
     def test_sequential_application_order(self, comprehensive_data):
         """Test that CUPAC and CUPED are applied in correct order."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag']}},
             cuped_features={'y': 'y0_lag_1'},
             cupac_model='linear'
         )
@@ -145,14 +145,14 @@ class TestCUPACCUPEDIntegration:
         
         # Test CUPAC only
         test_cupac = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model='linear'
         )
         result_cupac = test_cupac.execute(comprehensive_data)
         
         # Test both
         test_both = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cuped_features={'y': 'y0_lag_1'},
             cupac_model='linear'
         )
@@ -198,7 +198,7 @@ class TestABTestPipelineIntegration:
     def test_cupac_with_all_statistical_tests(self, ab_test_data):
         """Test CUPAC with all available statistical tests."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model='linear',
             additional_tests=['t-test', 'u-test', 'chi2-test']
         )
@@ -238,7 +238,7 @@ class TestABTestPipelineIntegration:
         
         for method in correction_methods:
             test = ABTest(
-                cupac_features={'y': ['y0_lag_1', 'X1_lag']},
+                cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag']}},
                 cupac_model='linear',
                 multitest_method=method
             )
@@ -274,7 +274,7 @@ class TestABTestPipelineIntegration:
         
         for model in models_to_test:
             test = ABTest(
-                cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+                cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
                 cupac_model=model
             )
             
@@ -290,7 +290,7 @@ class TestABTestPipelineIntegration:
     def test_cupac_auto_model_selection(self, ab_test_data):
         """Test CUPAC with automatic model selection."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model=None  # Auto selection
         )
         
@@ -305,7 +305,7 @@ class TestABTestPipelineIntegration:
     def test_equal_variance_parameter(self, ab_test_data):
         """Test t-test equal variance parameter with CUPAC/CUPED."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag']}},
             cuped_features={'y': 'y0_lag_1'},
             cupac_model='linear',
             t_test_equal_var=False
@@ -318,7 +318,7 @@ class TestABTestPipelineIntegration:
     def test_group_sizes_reporting(self, ab_test_data):
         """Test that group sizes are correctly reported with CUPAC/CUPED."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag']}},
             cuped_features={'y': 'y0_lag_1'},
             cupac_model='linear'
         )
@@ -384,7 +384,7 @@ class TestRealWorldScenarios:
         """Test CUPAC in e-commerce scenario."""
         test = ABTest(
             cupac_features={
-                'session_duration': ['session_duration_pre', 'age', 'previous_purchases']
+                'session_duration': {'pre_target': 'session_duration_pre', 'covariates': ['age', 'previous_purchases']}
             },
             cupac_model=['linear', 'ridge']
         )
@@ -429,8 +429,8 @@ class TestRealWorldScenarios:
         
         test = ABTest(
             cupac_features={
-                'session_duration': ['session_duration_pre', 'age'],
-                'conversion_rate': ['previous_purchases']
+                'session_duration': {'pre_target': 'session_duration_pre', 'covariates': ['age']},
+                'conversion_rate': {'pre_target': 'previous_purchases', 'covariates': ['age']}
             },
             cuped_features={'session_duration': 'session_duration_pre'},
             cupac_model='linear'
@@ -488,8 +488,8 @@ class TestRealWorldScenarios:
         """Test marketing campaign analysis with CUPAC and CUPED."""
         test = ABTest(
             cupac_features={
-                'email_opens': ['email_opens_pre'],
-                'click_through_rate': ['click_through_rate_pre']
+                'email_opens': {'pre_target': 'email_opens_pre', 'covariates': []},
+                'click_through_rate': {'pre_target': 'click_through_rate_pre', 'covariates': []}
             },
             cuped_features={
                 'email_opens': 'email_opens_pre'
@@ -539,7 +539,7 @@ class TestPerformanceAndScalability:
         # Test CUPAC performance
         start_time = time.time()
         test_cupac = ABTest(
-            cupac_features={'y': ['y_pre', 'x1', 'x2', 'x3']},
+            cupac_features={'y': {'pre_target': 'y_pre', 'covariates': ['x1', 'x2', 'x3']}},
             cupac_model='linear'
         )
         result_cupac = test_cupac.execute(dataset)
@@ -587,7 +587,7 @@ class TestPerformanceAndScalability:
         )
         
         test = ABTest(
-            cupac_features={'y': feature_names},
+            cupac_features={'y': {'pre_target': 'x0', 'covariates': feature_names[1:]}},
             cupac_model='linear'
         )
         
@@ -627,7 +627,7 @@ class TestPerformanceAndScalability:
         initial_memory = process.memory_info().rss
         
         test = ABTest(
-            cupac_features={'y': ['y_pre', 'x1', 'x2']},
+            cupac_features={'y': {'pre_target': 'y_pre', 'covariates': ['x1', 'x2']}},
             cuped_features={'y': 'y_pre'},
             cupac_model='linear'
         )
@@ -669,7 +669,7 @@ class TestErrorHandlingAndRobustness:
     def test_missing_data_handling(self, problematic_data):
         """Test handling of missing data."""
         test = ABTest(
-            cupac_features={'y': ['y_pre', 'x1']},
+            cupac_features={'y': {'pre_target': 'y_pre', 'covariates': ['x1']}},
             cuped_features={'y': 'y_pre'},
             cupac_model='linear'
         )
@@ -702,7 +702,7 @@ class TestErrorHandlingAndRobustness:
         )
         
         test = ABTest(
-            cupac_features={'y': ['y_pre']},
+            cupac_features={'y': {'pre_target': 'y_pre', 'covariates': []}},
             cupac_model='linear'
         )
         
@@ -734,7 +734,7 @@ class TestErrorHandlingAndRobustness:
         
         # Test invalid model name
         test_invalid_model = ABTest(
-            cupac_features={'y': ['y_pre']},
+            cupac_features={'y': {'pre_target': 'y_pre', 'covariates': []}},
             cupac_model='invalid_model_name'
         )
         
@@ -760,7 +760,7 @@ class TestErrorHandlingAndRobustness:
         )
         
         test = ABTest(
-            cupac_features={'y': ['y_pre']},
+            cupac_features={'y': {'pre_target': 'y_pre', 'covariates': []}},
             cuped_features={'y': 'y_pre'},
             cupac_model='linear'
         )

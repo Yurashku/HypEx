@@ -20,7 +20,7 @@ class CUPACExecutor(MLExecutor):
     """
     def __init__(
         self,
-        cupac_features: dict[str, list],
+        cupac_features: dict[str, dict[str, str | list[str]]],
         cupac_model: Union[str, Sequence[str], None] = None,
         key: Any = "",
         n_folds: int = 5,
@@ -28,7 +28,7 @@ class CUPACExecutor(MLExecutor):
     ):
         """
         Args:
-            cupac_features: dict[str, list] — parameters for CUPAC, e.g. {"target": ["cov1", "cov2"]}
+            cupac_features: dict[str, dict[str, str | list[str]]] — parameters for CUPAC. Format: {"target_column": {"pre_target": "pre_target_column", "covariates": ["cov1", "cov2", ...]}}. The model predicts pre_target using covariates, then subtracts prediction from target_column.
             cupac_model: str or list of str — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try.
             key: key for executor.
             n_folds: number of folds for cross-validation.
@@ -47,7 +47,7 @@ class CUPACExecutor(MLExecutor):
     def _inner_function(
         cls,
         data: Dataset,
-        cupac_features: dict[str, list],
+        cupac_features: dict[str, dict[str, str | list[str]]],
         n_folds: int = 5,
         random_state: Optional[int] = None,
         cupac_model: Optional[str] = None,

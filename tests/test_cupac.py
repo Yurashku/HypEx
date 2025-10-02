@@ -76,7 +76,7 @@ class TestCUPACExecutor:
 
     def test_cupac_executor_init(self):
         """Test CUPACExecutor initialization."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear',
@@ -92,7 +92,7 @@ class TestCUPACExecutor:
 
     def test_cupac_executor_init_multiple_models(self):
         """Test CUPACExecutor initialization with multiple models."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         models = ['linear', 'ridge', 'lasso']
         executor = CUPACExecutor(
             cupac_features=cupac_features,
@@ -103,7 +103,7 @@ class TestCUPACExecutor:
 
     def test_get_models_single_model(self, sample_data):
         """Test get_models method with single model."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear'
@@ -116,7 +116,7 @@ class TestCUPACExecutor:
 
     def test_get_models_multiple_models(self, sample_data):
         """Test get_models method with multiple models."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model=['linear', 'ridge']
@@ -130,7 +130,7 @@ class TestCUPACExecutor:
 
     def test_get_models_all_models(self, sample_data):
         """Test get_models method with all available models."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model=None
@@ -144,7 +144,7 @@ class TestCUPACExecutor:
 
     def test_fit_single_target(self, sample_data):
         """Test fitting CUPAC executor with single target."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear',
@@ -164,8 +164,8 @@ class TestCUPACExecutor:
         data_copy = data_copy.add_column(data=y2_values, role={'y2': TargetRole()})
         
         cupac_features = {
-            'y': ['X1_lag', 'X2_lag'],
-            'y2': ['X1_lag']
+            'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']},
+            'y2': {'pre_target': 'y_lag', 'covariates': ['X1_lag']}
         }
         executor = CUPACExecutor(
             cupac_features=cupac_features,
@@ -179,7 +179,7 @@ class TestCUPACExecutor:
 
     def test_predict_before_fit_raises_error(self, sample_data):
         """Test that predict raises error when called before fit."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(cupac_features=cupac_features)
         
         with pytest.raises(RuntimeError, match="CUPACExecutor not fitted"):
@@ -187,7 +187,7 @@ class TestCUPACExecutor:
 
     def test_get_variance_reductions_before_fit_raises_error(self, sample_data):
         """Test that get_variance_reductions raises error when called before fit."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(cupac_features=cupac_features)
         
         with pytest.raises(RuntimeError, match="CUPACExecutor not fitted"):
@@ -195,7 +195,7 @@ class TestCUPACExecutor:
 
     def test_fit_predict_workflow(self, sample_data):
         """Test complete fit-predict workflow."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear',
@@ -214,7 +214,7 @@ class TestCUPACExecutor:
 
     def test_variance_reduction_calculation(self, sample_data):
         """Test variance reduction calculation."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear',
@@ -230,7 +230,7 @@ class TestCUPACExecutor:
 
     def test_execute_method(self, experiment_data):
         """Test execute method of CUPACExecutor."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear',
@@ -248,7 +248,7 @@ class TestCUPACExecutor:
 
     def test_different_models(self, sample_data):
         """Test CUPAC with different model types."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         models_to_test = ['linear', 'ridge', 'lasso']
         
         for model in models_to_test:
@@ -266,7 +266,7 @@ class TestCUPACExecutor:
 
     def test_model_selection_multiple_models(self, sample_data):
         """Test automatic model selection with multiple models."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['X1_lag', 'X2_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model=['linear', 'ridge', 'lasso'],
@@ -282,7 +282,7 @@ class TestCUPACExecutor:
 
     def test_invalid_features(self, sample_data):
         """Test behavior with invalid feature names."""
-        cupac_features = {'y': ['nonexistent_feature']}
+        cupac_features = {'y': {'pre_target': 'y_lag', 'covariates': ['nonexistent_feature']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear'
@@ -293,7 +293,7 @@ class TestCUPACExecutor:
 
     def test_invalid_target(self, sample_data):
         """Test behavior with invalid target name."""
-        cupac_features = {'nonexistent_target': ['X1_lag']}
+        cupac_features = {'nonexistent_target': {'pre_target': 'y_lag', 'covariates': ['X1_lag']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear'
@@ -317,13 +317,15 @@ class TestCupacExtension:
         X1_lag = X1 + np.random.normal(0, 0.1, n_samples)
         X2_lag = X2 + np.random.normal(0, 0.1, n_samples)
         y = 2 * X1 + 1.5 * X2 + np.random.normal(0, 0.5, n_samples)
+        y_pre = y + np.random.normal(0, 0.2, n_samples)  # Pre-experiment target
         
         df = pd.DataFrame({
             'X1': X1,
             'X2': X2,
             'X1_lag': X1_lag,
             'X2_lag': X2_lag,
-            'y': y
+            'y': y,
+            'y_pre': y_pre
         })
         
         dataset = Dataset(
@@ -345,7 +347,7 @@ class TestCupacExtension:
 
     def test_cupac_extension_init(self, mock_available_models):
         """Test CupacExtension initialization."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -361,7 +363,7 @@ class TestCupacExtension:
 
     def test_calc_fit_mode(self, sample_data, mock_available_models):
         """Test calc method in fit mode."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -376,7 +378,7 @@ class TestCupacExtension:
 
     def test_calc_predict_mode(self, sample_data, mock_available_models):
         """Test calc method in predict mode."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -395,7 +397,7 @@ class TestCupacExtension:
 
     def test_calc_auto_mode(self, sample_data, mock_available_models):
         """Test calc method in auto mode."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -409,7 +411,7 @@ class TestCupacExtension:
 
     def test_calc_invalid_mode(self, sample_data, mock_available_models):
         """Test calc method with invalid mode."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -423,7 +425,7 @@ class TestCupacExtension:
 
     def test_variance_reduction_calculation(self, sample_data, mock_available_models):
         """Test variance reduction calculation in extension."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -439,7 +441,7 @@ class TestCupacExtension:
 
     def test_model_selection_single_model(self, sample_data, mock_available_models):
         """Test model selection with single model."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -454,7 +456,7 @@ class TestCupacExtension:
 
     def test_model_selection_multiple_models(self, sample_data, mock_available_models):
         """Test model selection with multiple models."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         extension = CupacExtension(
             cupac_features=cupac_features,
             available_models=mock_available_models,
@@ -469,7 +471,7 @@ class TestCupacExtension:
 
     def test_cross_validation_folds(self, sample_data, mock_available_models):
         """Test different number of cross-validation folds."""
-        cupac_features = {'y': ['X1_lag', 'X2_lag']}
+        cupac_features = {'y': {'pre_target': 'y_pre', 'covariates': ['X1_lag', 'X2_lag']}}
         
         for n_folds in [3, 5, 10]:
             extension = CupacExtension(
@@ -520,7 +522,7 @@ class TestCUPACIntegration:
     def test_abtest_with_cupac_single_model(self, sample_ab_data):
         """Test ABTest with CUPAC using single model."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model='linear'
         )
         
@@ -535,7 +537,7 @@ class TestCUPACIntegration:
     def test_abtest_with_cupac_multiple_models(self, sample_ab_data):
         """Test ABTest with CUPAC using multiple models."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model=['linear', 'ridge', 'lasso']
         )
         
@@ -547,7 +549,7 @@ class TestCUPACIntegration:
     def test_abtest_with_cupac_auto_model_selection(self, sample_ab_data):
         """Test ABTest with CUPAC using automatic model selection."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model=None  # Auto selection
         )
         
@@ -559,7 +561,7 @@ class TestCUPACIntegration:
     def test_variance_reduction_report(self, sample_ab_data):
         """Test variance reduction report generation."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model='linear'
         )
         
@@ -572,7 +574,7 @@ class TestCUPACIntegration:
     def test_cupac_with_additional_tests(self, sample_ab_data):
         """Test CUPAC with additional statistical tests."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model='linear',
             additional_tests=['t-test', 'u-test']
         )
@@ -589,7 +591,7 @@ class TestCUPACIntegration:
         from hypex.utils import ABNTestMethodsEnum
         
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag', 'X2_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag', 'X2_lag']}},
             cupac_model='linear',
             multitest_method=ABNTestMethodsEnum.bonferroni
         )
@@ -603,7 +605,7 @@ class TestCUPACIntegration:
         """Test that using CUPAC and CUPED together works."""
         # This should work as they create different target columns
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1', 'X1_lag']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag']}},
             cuped_features={'y': 'y0_lag_1'},
             cupac_model='linear'
         )
@@ -629,7 +631,7 @@ class TestCUPACIntegration:
     def test_cupac_invalid_model(self, sample_ab_data):
         """Test error handling with invalid model name."""
         test = ABTest(
-            cupac_features={'y': ['y0_lag_1']},
+            cupac_features={'y': {'pre_target': 'y0_lag_1', 'covariates': ['X1_lag']}},
             cupac_model='invalid_model'
         )
         
@@ -660,7 +662,7 @@ class TestCUPACEdgeCases:
 
     def test_small_dataset(self, minimal_data):
         """Test CUPAC with very small dataset."""
-        cupac_features = {'y': ['x']}
+        cupac_features = {'y': {'pre_target': 'x', 'covariates': ['x']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear',
@@ -674,7 +676,7 @@ class TestCUPACEdgeCases:
 
     def test_single_feature(self, minimal_data):
         """Test CUPAC with single covariate feature."""
-        cupac_features = {'y': ['x']}
+        cupac_features = {'y': {'pre_target': 'x', 'covariates': ['x']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear'
@@ -706,7 +708,7 @@ class TestCUPACEdgeCases:
             }
         )
         
-        cupac_features = {'y': ['x']}
+        cupac_features = {'y': {'pre_target': 'x', 'covariates': ['x']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear'
@@ -737,7 +739,7 @@ class TestCUPACEdgeCases:
             }
         )
         
-        cupac_features = {'y': ['x']}
+        cupac_features = {'y': {'pre_target': 'x', 'covariates': ['x']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear'
@@ -765,7 +767,7 @@ class TestCUPACEdgeCases:
             }
         )
         
-        cupac_features = {'y': ['x']}
+        cupac_features = {'y': {'pre_target': 'x', 'covariates': ['x']}}
         executor = CUPACExecutor(
             cupac_features=cupac_features,
             cupac_model='linear'
