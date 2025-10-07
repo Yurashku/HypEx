@@ -1,3 +1,4 @@
+# pytest -s -v tests/test_matching.py
 import pytest
 import pandas as pd
 import numpy as np
@@ -16,7 +17,7 @@ def matching_data():
     df = df.bfill().fillna(0)
     df["gender"] = df["gender"].astype("category").cat.codes
     df["industry"] = df["industry"].astype("category").cat.codes
-    df["treat"] = df["treat"].clip(0, 1)
+    df["treat"] = df["treat"]
 
     roles = {
         "user_id": InfoRole(int),
