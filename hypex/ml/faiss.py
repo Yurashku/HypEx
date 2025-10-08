@@ -49,24 +49,27 @@ class FaissNearestNeighbors(MLExecutor):
         **kwargs,
     ) -> dict:
         if test_pairs is not True:
-            data = cls._inner_function(
+            test_data = cls._inner_function(
                 data=grouping_data[0][1],
                 test_data=grouping_data[1][1],
                 n_neighbors=n_neighbors or 1,
                 faiss_mode=faiss_mode,
                 **kwargs,
             )
+            test_data.values[:] = grouping_data[0][1].index.take(test_data.values)
             if two_sides is not True:
-                return {"test": data}
+                return {"test": test_data}
+            control_data = cls._inner_function(
+                data=grouping_data[1][1],
+                test_data=grouping_data[0][1],
+                n_neighbors=n_neighbors or 1,
+                faiss_mode=faiss_mode,
+                **kwargs,
+            )
+            control_data.values[:] = grouping_data[1][1].index.take(control_data.values)
             return {
-                "test": data,
-                "control": cls._inner_function(
-                    data=grouping_data[1][1],
-                    test_data=grouping_data[0][1],
-                    n_neighbors=n_neighbors or 1,
-                    faiss_mode=faiss_mode,
-                    **kwargs,
-                ),
+                "test": test_data,
+                "control": control_data,
             }
         data = cls._inner_function(
             data=grouping_data[1][1],
@@ -149,14 +152,7 @@ class FaissNearestNeighbors(MLExecutor):
             matched_indexes = matched_indexes.append(
                 Dataset.from_dict(
                     data={
-                        col: t_ds.iloc[
-                            list(
-                                map(
-                                    lambda x: int(x[0]),
-                                    t_index_field[col].get_values(),
-                                )
-                            )
-                        ].index
+                        col: t_index_field.get_values(column=col)
                         for col in t_index_field.columns
                     },
                     roles={
@@ -169,4 +165,5 @@ class FaissNearestNeighbors(MLExecutor):
             matched_indexes = matched_indexes.reindex(data.ds.index, fill_value=-1)
         elif len(matched_indexes) < len(data.ds) and self.two_sides:
             raise PairsNotFoundError
+        matched_indexes.data.to_csv("matched_indexes.csv")
         return self._set_value(data, matched_indexes, key="matched")

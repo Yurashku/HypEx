@@ -302,6 +302,17 @@ class Dataset(DatasetBase):
         role: ABCRole = StatisticRole()
         return Dataset(data=result, roles={column: role for column in result.columns})
 
+    def take(
+            self,
+            indices: int | list[int],
+            axis: Literal["index", "columns", "rows"] | int = 0,
+    ) -> Dataset:
+        new_data = self._backend.take(indices=indices, axis=axis)
+        new_roles = {k: deepcopy(v) for k, v in self.roles.items() if k in new_data.columns} \
+            if axis == 1 \
+            else deepcopy(self.roles)
+        return Dataset(data=new_data, roles=new_roles)
+
     def add_column(
         self,
         data,
