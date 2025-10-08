@@ -132,6 +132,9 @@ class FaissNearestNeighbors(MLExecutor):
             two_sides=self.two_sides,
             test_pairs=self.test_pairs,
         )
+        compare_result = compare_result.fillna(-1).astype(
+            {col: int for col in compare_result.columns}
+        )
         ds = data.ds.groupby(group_field)
         matched_indexes = Dataset.create_empty()
         for i in range(len(compare_result.columns)):

@@ -303,14 +303,16 @@ class Dataset(DatasetBase):
         return Dataset(data=result, roles={column: role for column in result.columns})
 
     def take(
-            self,
-            indices: int | list[int],
-            axis: Literal["index", "columns", "rows"] | int = 0,
+        self,
+        indices: int | list[int],
+        axis: Literal["index", "columns", "rows"] | int = 0,
     ) -> Dataset:
         new_data = self._backend.take(indices=indices, axis=axis)
-        new_roles = {k: deepcopy(v) for k, v in self.roles.items() if k in new_data.columns} \
-            if axis == 1 \
+        new_roles = (
+            {k: deepcopy(v) for k, v in self.roles.items() if k in new_data.columns}
+            if axis == 1
             else deepcopy(self.roles)
+        )
         return Dataset(data=new_data, roles=new_roles)
 
     def add_column(
@@ -445,10 +447,12 @@ class Dataset(DatasetBase):
         by: Any,
         func: str | list | None = None,
         fields_list: str | list | None = None,
+        reset_index: bool = True,
         **kwargs,
     ) -> list[tuple[str, Dataset]]:
         if isinstance(by, Dataset) and len(by.columns) == 1:
-            self.data = self.data.reset_index(drop=True)
+            # if reset_index:
+            #     self.data = self.data.reset_index(drop=True)
             datasets = [
                 (group, Dataset(roles=self.roles, data=self.data.loc[group_data.index]))
                 for group, group_data in by._backend.groupby(by=by.columns[0], **kwargs)
@@ -801,8 +805,14 @@ class ExperimentData:
             elif len(value.columns) == 1:
                 role = role[0] if isinstance(role, list) else role
                 role = list(role.values())[0] if isinstance(role, dict) else role
-                executor_id = executor_id[0] if isinstance(executor_id, list) else executor_id
-                executor_id = list(executor_id.keys())[0] if isinstance(executor_id, dict) else executor_id
+                executor_id = (
+                    executor_id[0] if isinstance(executor_id, list) else executor_id
+                )
+                executor_id = (
+                    list(executor_id.keys())[0]
+                    if isinstance(executor_id, dict)
+                    else executor_id
+                )
                 self.additional_fields = self.additional_fields.add_column(
                     data=value, role={executor_id: role}
                 )
@@ -953,6 +963,8 @@ class ExperimentData:
                 searched_data = searched_data.add_column(
                     data=t_data, role={column: role}
                 )
+        if not searched_data.is_empty():
+            searched_data.index = self.ds.index
         return searched_data
 
 
