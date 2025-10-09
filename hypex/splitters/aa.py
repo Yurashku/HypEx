@@ -105,7 +105,7 @@ class AASplitter(Calculator):
             if control_data is not None:
                 control_indexes = list(control_data.index)
             const_size = sum(len(cd) for cd in const_data.values())
-            control_size = (len(data) * control_size - len(const_data["control"])) / (
+            control_size = 0 if len(data) <= const_size else (len(data) * control_size - len(const_data["control"])) / (
                 len(data) - const_size
             )
             # control_size = len(data) * control_size
