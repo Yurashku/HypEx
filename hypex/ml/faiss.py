@@ -9,6 +9,7 @@ from ..dataset import (
     Dataset,
     ExperimentData,
     FeatureRole,
+    AdditionalFeatureRole,
 )
 from ..executor import MLExecutor
 from ..extensions.faiss import FaissExtension
@@ -31,7 +32,9 @@ class FaissNearestNeighbors(MLExecutor):
         self.test_pairs = test_pairs
         self.faiss_mode = faiss_mode
         super().__init__(
-            grouping_role=grouping_role, target_role=FeatureRole(), key=key
+            grouping_role=grouping_role,
+            target_role=FeatureRole(),
+            key=key,
         )
 
     @classmethod
