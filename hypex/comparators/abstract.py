@@ -316,37 +316,14 @@ class Comparator(Calculator, ABC):
 
         compared_data = target_fields_data.groupby(by=group_field_data)
         baseline_indexes = baseline_field_data.groupby(by=group_field_data)
-        t = baseline_indexes[0][1].iget_values(column=0)
+        baseline_data = []
 
-        target_fields_data.data.to_csv("target_fields_data.csv")
-
-        import pandas as pd
-
-        # print(type(baseline_indexes[0][1].data.reset_index(drop=False)))
-        # print(baseline_indexes[0][1].data.reset_index(drop=False))
-        # print(baseline_indexes[0][1].columns)
-        # baseline_indexes[0][1].data.reset_index(drop=False).to_parquet(
-        #     "baseline_field_data.parquet"
-        # )
-
-        baseline_data = [
-            (group[0], target_fields_data.loc[(group[1].iget_values(column=0)), :])
-            for group in baseline_indexes
-        ]
-
-        # baseline_data = []
-
-        # for group in baseline_indexes:
-        #     name = group[0]
-        #     indexes = group[1].iget_values(column=0)
-        #     indexes = indexes if isinstance(indexes, list) else indexes.to_list()
-        #     tg_indexes = target_fields_data.index
-        #     group[1].data.to_csv("check_fields_data.csv")
-        #     are_in = all(index in tg_indexes for index in indexes)
-        #     target_fields_data.data.to_csv("target_fields_data.csv")
-        #     is_it = target_fields_data.data.loc[indexes]
-        #     append_data = target_fields_data.loc[indexes, :]
-        #     baseline_data.append((name, append_data))
+        for group in baseline_indexes:
+            name = group[0]
+            indexes = group[1].iget_values(column=0)
+            dummy_index = target_fields_data.index[-1]
+            indexes = list(map(lambda x: dummy_index if x < 0 else x, indexes))
+            baseline_data.append((name, target_fields_data.loc[indexes, :]))
 
         return baseline_data, compared_data
 

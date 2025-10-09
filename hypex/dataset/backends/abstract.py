@@ -261,6 +261,13 @@ class DatasetBackendCalc(DatasetBackendNavigation, ABC):
     def agg(self, func) -> Any:
         raise AbstractMethodError
 
+    def get(
+        self,
+        key,
+        default=None,
+    ) -> Any:
+        raise AbstractMethodError
+
     @abstractmethod
     def take(
             self,

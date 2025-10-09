@@ -302,6 +302,14 @@ class Dataset(DatasetBase):
         role: ABCRole = StatisticRole()
         return Dataset(data=result, roles={column: role for column in result.columns})
 
+    def get(
+        self,
+        key,
+        default=None,
+    ) -> Dataset:
+        res = self._backend.get(key, default)
+        return Dataset(data=self._backend.get(key, default), roles=deepcopy(self.roles))
+
     def take(
         self,
         indices: int | list[int],
