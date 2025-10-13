@@ -17,6 +17,14 @@ from ..utils.models import CUPAC_MODELS
 class CUPACExecutor(MLExecutor):
     """Executor that fits predictive models to pre-period covariates and adjusts target
     features using the CUPAC approach (model-based prediction adjustment similar to CUPED).
+    
+    CUPAC configuration is extracted from dataset.features_mapping with format:
+    {
+        "target_column": {
+            ("pre_target_col", period): ["cov1", "cov2", ...],
+            ...
+        }
+    }
     """
     def __init__(
         self,
@@ -36,8 +44,6 @@ class CUPACExecutor(MLExecutor):
         self.cupac_model = cupac_model
         self.n_folds = n_folds
         self.random_state = random_state
-        self.fitted_models: dict[str, Any] = {}
-        self.best_model_names: dict[str, str] = {}
         self.is_fitted = False
 
 
@@ -65,25 +71,46 @@ class CUPACExecutor(MLExecutor):
             return available_models, available_names
         return available_models, list(available_models.keys())
 
-    def fit(self, X: Dataset) -> "CUPACExecutor":
-        # Backend is guaranteed to be correct by dataset creation
-        backend_name = X.backend.name
-        
-        available_models, explicit_models = self.get_models(backend_name)
-        
-        # Update existing extension or create new one preserving features_mapping
-        if hasattr(self, 'extension') and self.extension:
-            # Update existing extension with models
-            self.extension.available_models = available_models
-            self.extension.explicit_models = explicit_models
-        else:
-            # Create new extension (shouldn't happen in normal flow)
-            self.extension = CupacExtension(
+    @classmethod
+    def _inner_function(
+        cls,
+        data: Dataset,
+        cupac_model: Optional[str] = None,
+        n_folds: int = 5,
+        random_state: Optional[int] = None,
+        **kwargs,
+    ) -> dict[str, np.ndarray]:
+        """Inner function that creates instance, fits and predicts."""
+        instance = cls(
+            cupac_model=cupac_model,
+            n_folds=n_folds,
+            random_state=random_state,
+        )
+        # Extract features_mapping from dataset if available
+        if hasattr(data, 'features_mapping') and data.features_mapping:
+            # Create extension with features_mapping
+            backend_name = data.backend.name
+            available_models, explicit_models = instance.get_models(backend_name)
+            
+            instance.extension = CupacExtension(
                 available_models=available_models,
                 explicit_models=explicit_models,
-                n_folds=self.n_folds,
-                random_state=self.random_state,
+                n_folds=n_folds,
+                random_state=random_state,
+                features_mapping=data.features_mapping
             )
+            # Extract CUPAC configuration from features_mapping
+            if not instance.extension.extract_cupac_from_features_mapping(data):
+                raise ValueError("Failed to extract CUPAC configuration from dataset.features_mapping")
+        else:
+            raise ValueError("No features_mapping found in Dataset. CUPAC requires features_mapping.")
+        
+        instance.fit(data)
+        return instance.predict(data)
+
+    def fit(self, X: Dataset) -> "CUPACExecutor":
+        if not hasattr(self, 'extension') or not self.extension:
+            raise RuntimeError("Extension not initialized. Call through execute() method.")
         
         self.extension.calc(X, mode="fit")
         self.is_fitted = True
@@ -101,18 +128,31 @@ class CUPACExecutor(MLExecutor):
 
 
 
-    def _inner_function(self, X, y, **kwargs):
-        """Inner function required by MLExecutor - not used in CUPAC."""
-        return None
+
     
     def execute(self, data: ExperimentData) -> ExperimentData:
         # Extract features_mapping from dataset if available
         dataset = data.ds
         if hasattr(dataset, 'features_mapping') and dataset.features_mapping:
-            # Create extension with empty lists initially
+            # Determine backend and get models
+            backend_key = "pandasdataset"  # Default backend
+            available_models = {name: model_dict[backend_key] for name, model_dict in CUPAC_MODELS.items() if model_dict[backend_key] is not None}
+            
+            # Determine explicit models
+            explicit_models = []
+            if self.cupac_model:
+                if isinstance(self.cupac_model, str):
+                    explicit_models = [self.cupac_model]
+                elif isinstance(self.cupac_model, (list, tuple)):
+                    explicit_models = list(self.cupac_model)
+            else:
+                # Use all available models if none specified
+                explicit_models = list(available_models.keys())
+            
+            # Create extension with proper models
             self.extension = CupacExtension(
-                available_models={},
-                explicit_models=[],
+                available_models=available_models,
+                explicit_models=explicit_models,
                 n_folds=self.n_folds,
                 random_state=self.random_state,
                 features_mapping=dataset.features_mapping  # Pass original features_mapping

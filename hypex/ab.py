@@ -42,12 +42,8 @@ class ABTest(ExperimentShell):
             additional_tests=[ABTestTypesEnum.t_test, ABTestTypesEnum.chi2_test],
             multitest_method=ABNTestMethodsEnum.bonferroni,
             cuped_features={"target_feature": "pre_target_feature"},
-            cupac_features={
-                "revenue": {
-                    "pre_target": "revenue_before", 
-                    "covariates": ["age", "gender", "prev_purchases"]
-                }
-            }
+            enable_cupac=True,
+            cupac_model=['linear', 'ridge']
         )
         results = ab_test.execute(data)
     """
