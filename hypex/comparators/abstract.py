@@ -318,6 +318,7 @@ class Comparator(Calculator, ABC):
         baseline_indexes = baseline_field_data.groupby(by=group_field_data)
         baseline_data = []
 
+        # mapping the data of the baseline data to its mathes data. If there are no matches, matching index will be -1
         for group in baseline_indexes:
             name = group[0]
             indexes = group[1].iget_values(column=0)
@@ -416,6 +417,18 @@ class Comparator(Calculator, ABC):
         )
 
     def execute(self, data: ExperimentData) -> ExperimentData:
+        """
+        Execute the comparator on the given data.
+
+        The comparator will split the data into a baseline and a comparison
+        dataset based on the compare_by argument. Then it will calculate
+        statistics comparing the baseline and comparison datasets.
+
+        :param data: The ExperimentData to execute the comparator on
+        :type data: ExperimentData
+        :return: The ExperimentData with the comparison results
+        :rtype: ExperimentData
+        """
         fields = self._get_fields_data(data)
         group_field_data = fields["group_field"]
         target_fields_data = fields["target_fields"]
@@ -428,9 +441,8 @@ class Comparator(Calculator, ABC):
         )
 
         if len(target_fields_data.columns) == 0:
-            if (
-                data.ds.tmp_roles
-            ):  # if the column is not suitable for the test, then the target will be empty, but if there is a role tempo, then this is normal behavior
+            # If the column is not suitable for the test, then the target will be empty, but if there is a role tempo, then this is normal behavior
+            if data.ds.tmp_roles:
                 return data
             else:
                 raise NoColumnsError(TargetRole().role_name)
