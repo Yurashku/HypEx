@@ -20,7 +20,6 @@ class CUPACExecutor(MLExecutor):
     """
     def __init__(
         self,
-        cupac_features: dict[str, dict[str, str | list[str]]],
         cupac_model: Union[str, Sequence[str], None] = None,
         key: Any = "",
         n_folds: int = 5,
@@ -28,14 +27,12 @@ class CUPACExecutor(MLExecutor):
     ):
         """
         Args:
-            cupac_features: dict[str, dict[str, str | list[str]]] — parameters for CUPAC. Format: {"target_column": {"pre_target": "pre_target_column", "covariates": ["cov1", "cov2", ...]}}. The model predicts pre_target using covariates, then subtracts prediction from target_column.
             cupac_model: str or list of str — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try.
             key: key for executor.
             n_folds: number of folds for cross-validation.
             random_state: random seed.
         """
         super().__init__(target_role=TargetRole(), key=key)
-        self.cupac_features = cupac_features
         self.cupac_model = cupac_model
         self.n_folds = n_folds
         self.random_state = random_state
@@ -43,24 +40,7 @@ class CUPACExecutor(MLExecutor):
         self.best_model_names: dict[str, str] = {}
         self.is_fitted = False
 
-    @classmethod
-    def _inner_function(
-        cls,
-        data: Dataset,
-        cupac_features: dict[str, dict[str, str | list[str]]],
-        n_folds: int = 5,
-        random_state: Optional[int] = None,
-        cupac_model: Optional[str] = None,
-        **kwargs,
-    ) -> dict[str, np.ndarray]:
-        instance = cls(
-            cupac_features=cupac_features,
-            n_folds=n_folds,
-            random_state=random_state,
-            cupac_model=cupac_model,
-        )
-        instance.fit(data)
-        return instance.predict(data)
+
 
     def get_models(self, backend_name: str) -> tuple[dict[str, Any], Sequence[str]]:
         """
@@ -91,13 +71,20 @@ class CUPACExecutor(MLExecutor):
         
         available_models, explicit_models = self.get_models(backend_name)
         
-        self.extension = CupacExtension(
-            cupac_features=self.cupac_features,
-            available_models=available_models,
-            explicit_models=explicit_models,
-            n_folds=self.n_folds,
-            random_state=self.random_state,
-        )
+        # Update existing extension or create new one preserving features_mapping
+        if hasattr(self, 'extension') and self.extension:
+            # Update existing extension with models
+            self.extension.available_models = available_models
+            self.extension.explicit_models = explicit_models
+        else:
+            # Create new extension (shouldn't happen in normal flow)
+            self.extension = CupacExtension(
+                available_models=available_models,
+                explicit_models=explicit_models,
+                n_folds=self.n_folds,
+                random_state=self.random_state,
+            )
+        
         self.extension.calc(X, mode="fit")
         self.is_fitted = True
         return self
@@ -114,7 +101,31 @@ class CUPACExecutor(MLExecutor):
 
 
 
+    def _inner_function(self, X, y, **kwargs):
+        """Inner function required by MLExecutor - not used in CUPAC."""
+        return None
+    
     def execute(self, data: ExperimentData) -> ExperimentData:
+        # Extract features_mapping from dataset if available
+        dataset = data.ds
+        if hasattr(dataset, 'features_mapping') and dataset.features_mapping:
+            # Create extension with empty lists initially
+            self.extension = CupacExtension(
+                available_models={},
+                explicit_models=[],
+                n_folds=self.n_folds,
+                random_state=self.random_state,
+                features_mapping=dataset.features_mapping  # Pass original features_mapping
+            )
+            # Extract CUPAC configuration from features_mapping
+            if not self.extension.extract_cupac_from_features_mapping(dataset):
+                raise ValueError("Failed to extract CUPAC configuration from dataset.features_mapping")
+        else:
+            raise ValueError("No features_mapping found in Dataset. CUPAC requires features_mapping.")
+        
+        if not self.extension.cupac_features:
+            raise ValueError("No CUPAC configuration found. Please provide features_mapping in Dataset.")
+        
         self.fit(data.ds)
         predictions = self.predict(data.ds)
         new_ds = deepcopy(data.ds)  # Create a deep copy to avoid modifying original dataset
