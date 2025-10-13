@@ -9,6 +9,7 @@ import time
 import tracemalloc
 import warnings
 from collections import defaultdict
+from copy import copy
 from typing import ClassVar
 
 import jsonschema
@@ -48,6 +49,59 @@ class DataProfiler:
                 del self.fixed_data_params[key]
 
     @staticmethod
+    def _get_data_from_sample(
+            sample_df: pd.DataFrame | str , 
+            n_numerical: int, 
+            n_categorical: int, 
+            n_rows: int | None = None,
+        )->pd.DataFrame:
+
+        if isinstance(sample_df, pd.DataFrame):
+            df = sample_df
+        elif ".csv" in sample_df:
+            df = pd.read_csv(sample_df)
+        elif ".parquet" in sample_df:
+            df = pd.read_parquet(sample_df, engine="pyarrow")
+        else:
+            raise ValueError("sample_df must be a DataFrame or a file path")
+        
+        sample_numeric_cols = [col for col in df.columns if df.dtypes[col] in [int, float]]
+        sample_cat_cols = [col for col in df.columns if col not in sample_numeric_cols]
+
+        new_num_cols = copy(sample_numeric_cols)
+        new_cat_cols = copy(sample_cat_cols)
+
+        while len(new_num_cols) < n_numerical:
+            new_num_cols += sample_numeric_cols
+
+        while len(new_cat_cols) < n_categorical:
+            new_cat_cols += sample_cat_cols
+
+        new_num_cols = new_num_cols[:n_numerical]
+        new_cat_cols = new_cat_cols[:n_categorical]
+
+        new_df = df[new_num_cols + new_cat_cols]
+
+        new_num_cols_renamed = copy(sample_numeric_cols)
+        new_cat_cols_renamed = copy(sample_cat_cols)
+
+        for i in range(n_numerical//len(sample_numeric_cols)):
+            new_num_cols_renamed += [col+f"_{i}" for col in sample_numeric_cols]
+
+        for i in range(n_categorical//len(sample_cat_cols)):
+            new_cat_cols_renamed += [col+f"_{i}" for col in sample_cat_cols]
+
+        new_num_cols_renamed = new_num_cols_renamed[:n_numerical]
+        new_cat_cols_renamed = new_cat_cols_renamed[:n_categorical]
+
+        new_df.columns = new_num_cols_renamed + new_cat_cols_renamed
+
+        if n_rows and len(new_df) < n_rows:
+            new_df = pd.concat([new_df] * (n_rows // len(new_df)), ignore_index=True)
+
+        return new_df
+
+    @staticmethod
     def _generate_synthetic_data(
             n_columns: int,
             n_rows: int,
@@ -55,12 +109,16 @@ class DataProfiler:
             rs: int | None,
             num_range: tuple,
             n_categories: int,
+            sample_df: pd.DataFrame | str | None = None,
     ) -> pd.DataFrame:
-        if rs is not None:
-            np.random.seed(rs)
-
         n_numerical = int(n_columns * n2c_ratio)
         n_categorical = n_columns - n_numerical
+
+        if sample_df is not None:
+            return DataProfiler._get_data_from_sample(sample_df, n_numerical, n_categorical, n_rows)
+        
+        if rs is not None:
+            np.random.seed(rs)
 
         numerical_data = np.random.randint(
             num_range[0], num_range[1], size=(n_rows, n_numerical)
@@ -76,12 +134,12 @@ class DataProfiler:
         )
 
     def create_dataset(
-            self, params: dict
+            self, params: dict, sample_df: pd.DataFrame | str | None = None
     ) -> tuple[Dataset, dict[str, int | tuple[int, int] | float]]:
         all_params = self.fixed_data_params.copy()
         all_params.update(params)
 
-        data = self._generate_synthetic_data(**all_params)
+        data = self._generate_synthetic_data(**all_params, **{"sample_df": sample_df})
         return (
             Dataset(roles={column: TargetRole() for column in data.columns}, data=data),
             all_params,
@@ -129,7 +187,7 @@ class PerformanceTester:
         self.use_memory = use_memory
         self.rewrite = rewrite
 
-    def get_params(self):
+    def get_params(self, sample_df: pd.DataFrame | str | None = None):
         for params in self.iterable_params:
             all_params = params.copy()
             if "n_iterations" in list(params.keys()):
@@ -139,13 +197,13 @@ class PerformanceTester:
                 experiment_params = {}
             data_params = params
             yield all_params, self.dataProfiler.create_dataset(
-                data_params
+                data_params, sample_df=sample_df
             ), self.experimentProfiler.get_experiment(experiment_params)
 
     def get_number_params(self):
         return len(self.iterable_params)
 
-    def execute(self, file_name, analysis="onefactor"):
+    def execute(self, file_name, analysis="onefactor", sample_data=None):
         if self.rewrite:
             with open(file_name, "w", newline="") as file:
                 writer = csv.writer(file)
@@ -162,7 +220,8 @@ class PerformanceTester:
                 spinner="dots_waves2",
                 title=f"Analysis : {analysis}",
         ) as bar:
-            for params, data, experiment in tqdm(self.get_params()):
+            for params, data, experiment in tqdm(self.get_params(sample_df=sample_data)):
+                print(data[0].columns)
                 combined_params = {**data[1], **experiment[1]}
                 print(f"{combined_params}")
 
@@ -244,6 +303,7 @@ def performance_test_plot(
         title="The results of the one-factor performance test of the AA Test",
 ):
     df = pd.read_csv(output_path)
+    print(df.head())
     df = df[df.analysis == "onefactor"]
     df = df[["time", "M1", "M2"]]
     result = {"Var": [], "P": []}
@@ -279,14 +339,14 @@ def performance_test_plot(
     plt.savefig(f"{output_path[:output_path.rfind('.')]}.png")
 
 
-def executor(config: dict, output_path: str):
+def executor(config: dict, output_path: str, experimrnt: ExperimentShell = AATest, sample_data: pd.DataFrame | str = None):
     output_path = f"{output_path}.csv"
 
     if "fixed_params" not in config:
         config["fixed_params"] = {}
 
     experimentProfiler = ExperimentProfiler(
-        fixed_experiment_params=config["fixed_params"], experiment=AATest
+        fixed_experiment_params=config["fixed_params"], experiment=experimrnt
     )
     dataProfiler = DataProfiler(fixed_data_params=config["fixed_params"])
     test = PerformanceTester(
@@ -304,9 +364,11 @@ def executor(config: dict, output_path: str):
             for param in params:
                 iterable_params.append({param_name: param})
         test.iterable_params = iterable_params
-        test.execute(output_path, analysis="onefactor")
+        test.execute(output_path, analysis="onefactor", sample_data=sample_data)
         test.rewrite = False
-        performance_test_plot(config["onefactor_params"], output_path)
+        title="The results of the one-factor performance test of the experiment.__class__.__name__"
+        print(output_path)
+        performance_test_plot(config["onefactor_params"], output_path, title=title)
 
     if "montecarlo_params" in config:
         mcparams = config["montecarlo_params"]
@@ -327,12 +389,31 @@ def executor(config: dict, output_path: str):
         test.iterable_params = df
         test.execute(output_path, analysis="montecarlo")
 
+def performance_test(
+        file_path_config: str = "config.json", 
+        file_path_schema: str = "config.schema.json", 
+        output_path: str = "test_result",
+        experiment: Experiment = None,
+        sample_data: pd.DataFrame | str = None,
+        ):
+    
+    with open(file_path_schema) as file1, open(file_path_config) as file2:
+        schema = json.load(file1)
+        config = json.load(file2)
+    try:
+        jsonschema.validate(instance=config, schema=schema)
+    except jsonschema.exceptions.ValidationError as err:
+        raise ValueError(f"JSON validation error: {err}") from err
+    
+    executor(config=config, output_path=output_path, experimrnt=experiment, sample_data=sample_data)
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     file_path_schema = os.path.join(script_dir, "config.schema.json")
     file_path_config = os.path.join(script_dir, "config.json")
+
+    output_path = "aa_performance_test_result"
 
     with open(file_path_schema) as file1, open(file_path_config) as file2:
         schema = json.load(file1)
@@ -342,5 +423,4 @@ if __name__ == "__main__":
     except jsonschema.exceptions.ValidationError as err:
         raise ValueError(f"JSON validation error: {err}") from err
 
-    output_path = "aa_performance_test_result"
     executor(config=config, output_path=output_path)
