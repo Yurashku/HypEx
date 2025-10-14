@@ -402,6 +402,9 @@ class Dataset(DatasetBase):
         index=None,
     ) -> Dataset:
         ds = Dataset(roles=roles, backend=backend)
+        # if all([isinstance(v, Dataset) for v in data.values()]):
+        #     ds._backend = ds._backend.from_dict({k: v.data for k, v in data.items()}, data, index)
+        # else:
         ds._backend = ds._backend.from_dict(data, index)
         ds.data = ds._backend.data
         return ds
