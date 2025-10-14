@@ -144,26 +144,30 @@ class FaissNearestNeighbors(MLExecutor):
             two_sides=self.two_sides,
             test_pairs=self.test_pairs,
         )
-        compare_result = compare_result.fillna(-1).astype(
-            {col: int for col in compare_result.columns}
-        )
+        for result in compare_result.values():
+            result = result.fillna(-1).astype(
+                {col: int for col in result.columns}
+            )
         ds = data.ds.groupby(group_field)
         matched_indexes = Dataset.create_empty()
-        for i in range(len(compare_result.columns)):
+        for res_k, res_v in compare_result.items():
+        # for i in range(len(compare_result.columns)):
             group = (
                 grouping_data[1][1]
-                if compare_result.columns[i] == "test"
+                if res_k == "test"
                 else grouping_data[0][1]
             )
-            t_ds = ds[0][1] if compare_result.columns[i] == "test" else ds[1][1]
+            t_ds = ds[0][1] if res_k == "test" else ds[1][1]
             t_index_field = (
-                compare_result[compare_result.columns[i]]
+                res_v
                 .loc[: len(group) - 1]
-                .rename({compare_result.columns[i]: "indexes"})
+                # .rename({compare_result.columns[i]: "indexes"})
             )
-            if t_index_field.isna().sum() > 0:
+            if any([v > 0 for v in t_index_field.isna().sum().get_values(row="sum")]):
                 raise PairsNotFoundError
-            t_index_field = t_index_field.list_to_columns("indexes")
+            # t_index_field = t_index_field.list_to_columns("indexes")
+            t_index_field = t_index_field.rename({col: f"indexes_{i}" for i, col in enumerate(t_index_field.columns)})
+            # t_index_field.columns = ["indexes"] if len(t_index_field.columns) == 1 else [f"indexes_{i}" for i in range(len(t_index_field.columns))]
             matched_indexes = matched_indexes.append(
                 Dataset.from_dict(
                     data={
