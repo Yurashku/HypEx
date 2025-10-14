@@ -163,7 +163,8 @@ class FaissNearestNeighbors(MLExecutor):
                 .loc[: len(group) - 1]
                 # .rename({compare_result.columns[i]: "indexes"})
             )
-            if any([v > 0 for v in t_index_field.isna().sum().get_values(row="sum")]):
+            n_nans = t_index_field.isna().sum().get_values(row="sum") if t_index_field.shape[1] > 1 else [t_index_field.isna().sum()]
+            if any(n_nans):
                 raise PairsNotFoundError
             # t_index_field = t_index_field.list_to_columns("indexes")
             t_index_field = t_index_field.rename({col: f"indexes_{i}" for i, col in enumerate(t_index_field.columns)})

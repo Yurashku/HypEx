@@ -1036,8 +1036,8 @@ class DatasetAdapter(Adapter):
     @staticmethod
     def list_to_dataset(data: list, roles: dict[str, ABCRole]) -> Dataset:
         return Dataset(
-            roles=roles,
-            data=pd.DataFrame(data=data, columns=[next(iter(roles.keys()))]),
+            roles= roles if len(roles) > 0 else {0: DefaultRole()},
+            data=pd.DataFrame(data=data, columns=[next(iter(roles.keys()))] if len(roles) > 0 else [0]),
         )
 
     @staticmethod
