@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 from typing import Any, Callable, Hashable, Literal, Sequence
 
+import numpy as np
 import pandas as pd  # type: ignore
 from numpy import ndarray
 
@@ -993,6 +994,8 @@ class DatasetAdapter(Adapter):
             if isinstance(roles, ABCRole):
                 raise InvalidArgumentError("roles", "dict[str, ABCRole]")
             return DatasetAdapter.list_to_dataset(data, roles)
+        elif isinstance(data, np.ndarray):
+            return DatasetAdapter.ndarray_to_dataset(data, roles)
         elif any(isinstance(data, t) for t in [str, int, float, bool]):
             return DatasetAdapter.value_to_dataset(data, roles)
         elif isinstance(data, Dataset):
@@ -1036,6 +1039,15 @@ class DatasetAdapter(Adapter):
 
     @staticmethod
     def frame_to_dataset(data: pd.DataFrame, roles: dict[str, ABCRole]) -> Dataset:
+        return Dataset(
+            roles=roles,
+            data=data,
+        )
+    
+    @staticmethod
+    def ndarray_to_dataset(data: np.ndarray, roles: dict[str, ABCRole]) -> Dataset:
+        columns = range(data.shape[1]) if len(roles) == 0 else list(roles.keys())
+        data = pd.DataFrame(data=data, columns=columns)
         return Dataset(
             roles=roles,
             data=data,

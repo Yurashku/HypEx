@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from copy import deepcopy
+from typing import Any, Literal, Sequence
 
 from ..comparators.distances import MahalanobisDistance
 from ..dataset import (
@@ -38,6 +39,15 @@ class FaissNearestNeighbors(MLExecutor):
         )
 
     @classmethod
+    def _set_global_match_indexes(cls, local_indexes: Dataset, data: tuple(str, Dataset)) -> list[int, list[int]]:
+        if len(local_indexes) == 0:
+            return local_indexes
+        global_indexes = local_indexes
+        for col in local_indexes.columns:
+            global_indexes[col] = data[1].index.take(local_indexes.get_values(column=col))
+        return global_indexes
+    
+    @classmethod
     def _execute_inner_function(
         cls,
         grouping_data,
@@ -56,7 +66,8 @@ class FaissNearestNeighbors(MLExecutor):
                 faiss_mode=faiss_mode,
                 **kwargs,
             )
-            test_data.values[:] = grouping_data[0][1].index.take(test_data.values)
+            test_data = cls._set_global_match_indexes(test_data, grouping_data[0])
+            # test_data.values[:] = grouping_data[0][1].index.take(test_data.values)
             if two_sides is not True:
                 return {"test": test_data}
             control_data = cls._inner_function(
@@ -66,7 +77,8 @@ class FaissNearestNeighbors(MLExecutor):
                 faiss_mode=faiss_mode,
                 **kwargs,
             )
-            control_data.values[:] = grouping_data[1][1].index.take(control_data.values)
+            control_data = cls._set_global_match_indexes(control_data, grouping_data[1])
+            # control_data.values[:] = grouping_data[1][1].index.take(control_data.values)
             return {
                 "test": test_data,
                 "control": control_data,
