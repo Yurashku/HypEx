@@ -166,7 +166,6 @@ class CUPACExecutor(MLExecutor):
     def execute(self, data: ExperimentData) -> ExperimentData:
         self._validate_models()
         cupac_data = self._prepare_data(data)
-        print(cupac_data)
         for target in cupac_data.keys():
             best_model, best_var_red = None, None
             for model in self.cupac_models:
@@ -188,7 +187,7 @@ class CUPACExecutor(MLExecutor):
 
             if best_model is None:
                 raise RuntimeError(f"No models were successfully fitted for target '{target}'. All models failed during training.")
-                
+
             if 'X_predict' in cupac_data[target]:
                 X_predict = CUPACExecutor._agg_data_from_cupac_data(
                     data,
@@ -202,5 +201,7 @@ class CUPACExecutor(MLExecutor):
                     role={f"{target}_cupac": AdditionalTargetRole()}
                 )
             
-            data.analysis_tables[f"{target}_best_model"] = best_model
-            data.analysis_tables[f"{target}_variance_reduction"] = best_var_red
+            # data.analysis_tables[f"{target}_best_model"] = best_model
+            # data.analysis_tables[f"{target}_variance_reduction"] = best_var_red
+
+        return data

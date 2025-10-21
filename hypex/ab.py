@@ -53,7 +53,7 @@ class ABTest(ExperimentShell):
         additional_tests: (
             str | ABTestTypesEnum | list[str | ABTestTypesEnum] | None
         ),
-        multitest_method: ABNTestMethodsEnum | None,
+        multitest_method: str | None,
         cuped_features: dict[str, str] | None,
         cupac_models: str | list[str] | None,
         enable_cupac: bool,
@@ -88,7 +88,11 @@ class ABTest(ExperimentShell):
                 role=TargetRole(),
             ),
             ABAnalyzer(
-                multitest_method=multitest_method
+                multitest_method=(
+                    ABNTestMethodsEnum(multitest_method)
+                    if multitest_method
+                    else None
+                )
             ),
         ]
         if cuped_features:
@@ -107,7 +111,22 @@ class ABTest(ExperimentShell):
             | list[str | ABTestTypesEnum]
             | None
         ) = None,
-        multitest_method: ABNTestMethodsEnum | None = ABNTestMethodsEnum.holm,
+        multitest_method: (
+            Literal[
+                "bonferroni",
+                "sidak",
+                "holm-sidak",
+                "holm",
+                "simes-hochberg",
+                "hommel",
+                "fdr_bh",
+                "fdr_by",
+                "fdr_tsbh",
+                "fdr_tsbhy",
+                "quantile",
+            ]
+            | None
+        ) = "holm",
         t_test_equal_var: bool | None = None,
         cuped_features: dict[str, str] | None = None,
         cupac_models: str | list[str] | None = None,
