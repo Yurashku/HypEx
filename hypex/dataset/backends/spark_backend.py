@@ -1,0 +1,463 @@
+import os
+import sys
+
+from pathlib import Path
+from typing import Any, Callable, Iterable, Literal, Sequence, Sized, Optional, Union
+
+import numpy as np
+import pandas as pd
+import pyspark.sql as spark
+from pyspark import SparkContext, SparkConf, StorageLevel
+from pyspark.sql import SparkSession, functions as F, types as T
+
+
+from ...utils import FromDictTypes, MergeOnError, ScalarType
+from .abstract import DatasetBackendCalc, DatasetBackendNavigation
+
+
+class SparkNavigation(DatasetBackendNavigation):
+    @staticmethod
+    def _read_file(filename: Union[str, Path], session: SparkSession) -> spark.DataFrame:
+        file_extension = Path(filename).suffix
+        if file_extension == ".csv":
+            return session.read.format("csv").option("header", "true").load(filename)
+        elif file_extension == ".parquet":
+            return session.read.parquet(filename)
+        else:
+            try:
+                return session.read.table(filename)
+            except:
+                raise ValueError(f"Unsupported file extension {file_extension}")
+            
+    @staticmethod
+    def _get_spark_session(app_name: str = "HypEx", python_path=None, dynamic_allocation=True, mode="local"):
+        if python_path is None:
+            python_path = sys.executable
+
+        os.environ["PYSPARK_PYTHON"] = python_path
+        os.environ["PYSPARK_DRIVER_PYTHON"] = python_path
+
+        if mode == "local":
+            conf = (
+                SparkConf().
+                setAppName(app_name).
+                setMaster("local[*]").
+                set("spark.driver.memory", "6g").
+                set("spark.executor.memory", "6g")
+            )
+        else:
+            conf = (
+                SparkConf().
+                setAppName(app_name).
+                # setMaster("yarn").
+                set("spark.executor.cores", "8").
+                set("spark.executor.memory", "8g").
+                set("spark.executor.memoryOverhead", "8g").
+                set("spark.driver.cores", "12").
+                set("spark.driver.memory", "16g").
+                set("spark.driver.maxResultSize", "32g").
+                set("spark.shuffle.service.enabled", "true").
+                set("spark.dynamicAllocation.enabled", dynamic_allocation).
+                set("spark.dynamicAllocation.initialExecutors", "6").
+                set("spark.dynamicAllocation.maxExecutors", "32").
+                set("spark.dynamicAllocation.executorIdleTimeout", "120s").
+                set("spark.dynamicAllocation.cachedExecutorIdleTimeout", "600s").
+                set("spark.port.maxRetries", "150")
+            )
+
+        return SparkSession.builder.config(conf=conf).enableHiveSupport().getOrCreate()
+
+    def __init__(
+            self, 
+            data: Optional[Union[spark.DataFrame, pd.DataFrame, dict, str]] = None, 
+            session: SparkSession = None):
+        if session is None:
+            if isinstance(data, spark.DataFrame):
+                self.session = data.spark
+            else:
+                self.session = self._get_spark_session()
+        else:
+            if not isinstance(session, SparkSession):
+                raise TypeError("Session must be an instance of SparkSession")
+        
+        if isinstance(data, dict):
+            if "index" in data.keys():
+                data = pd.DataFrame(data=data["data"], index=data["index"])
+            else:
+                data = pd.DataFrame(data=data["data"])
+
+        if isinstance(data, spark.DataFrame):
+            self.data = data
+        elif isinstance(data, pd.DataFrame):
+            self.data = SparkSession.createDataFrame(data)
+        elif isinstance(data, str):
+            self.data = self._read_file(data, self.session)
+        else:
+            self.data = SparkSession.emptyDataFrame
+
+    def __getitem__(self, item):
+        pass
+
+    def __len__(self):
+        pass
+
+    @staticmethod
+    def __magic_determine_other(other) -> Any:
+        pass
+
+    # comparison operators:
+    def __eq__(self, other) -> Any:
+        pass
+
+    def __ne__(self, other) -> Any:
+        pass
+
+    def __le__(self, other) -> Any:
+        pass
+
+    def __lt__(self, other) -> Any:
+        pass
+
+    def __ge__(self, other) -> Any:
+        pass
+
+    def __gt__(self, other) -> Any:
+        pass
+
+    # Unary operations:
+    def __pos__(self) -> Any:
+        pass
+
+    def __neg__(self) -> Any:
+        pass
+
+    def __abs__(self) -> Any:
+        pass
+
+    def __invert__(self) -> Any:
+        pass
+
+    def __round__(self, ndigits: int = 0) -> Any:
+        pass
+
+    # Binary operations:
+    def __add__(self, other) -> Any:
+        pass
+
+    def __sub__(self, other) -> Any:
+        pass
+
+    def __mul__(self, other) -> Any:
+        pass
+
+    def __floordiv__(self, other) -> Any:
+        pass
+
+    def __div__(self, other) -> Any:
+        pass
+
+    def __truediv__(self, other) -> Any:
+        pass
+
+    def __mod__(self, other) -> Any:
+        pass
+
+    def __pow__(self, other) -> Any:
+        pass
+
+    def __and__(self, other) -> Any:
+        pass
+
+    def __or__(self, other) -> Any:
+        pass
+
+    # Right arithmetic operators:
+    def __radd__(self, other) -> Any:
+        pass
+
+    def __rsub__(self, other) -> Any:
+        pass
+
+    def __rmul__(self, other) -> Any:
+        pass
+
+    def __rfloordiv__(self, other) -> Any:
+        pass
+
+    def __rdiv__(self, other) -> Any:
+        pass
+
+    def __rtruediv__(self, other) -> Any:
+        pass
+
+    def __rmod__(self, other) -> Any:
+        pass
+
+    def __rpow__(self, other) -> Any:
+        pass
+
+    def __repr__(self):
+        pass
+
+    def _repr_html_(self):
+        pass
+
+    def create_empty(
+        self,
+        index: Optional[Iterable] = None,
+        columns: Optional[Iterable[str]] = None,
+    ):
+        pass
+    @property
+    def index(self):
+        pass
+
+    @property
+    def columns(self):
+        return self.data.columns
+
+    @property
+    def shape(self):
+        pass
+
+    def _get_column_index(
+        self, column_name: Union[Sequence[str], str]
+    ) -> Union[int, Sequence[int]]:
+        pass
+
+    def get_column_type(self, column_name: str) -> Optional[type]:
+        pass
+
+    def astype(
+        self, dtype: dict[str, type], errors: Literal["raise", "ignore"] = "raise"
+    ) -> spark.DataFrame:
+        pass
+
+    def update_column_type(self, column_name: str, type_name: type):
+        pass
+
+    def add_column(
+        self,
+        data: Sequence,
+        name: Union[str, list[str]],
+        index: Optional[Sequence] = None,
+    ):
+        pass
+
+    def append(self, other, reset_index: bool = False, axis: int = 0) -> spark.DataFrame:
+        pass
+
+    def from_dict(self, data: FromDictTypes, index: Optional[Union[Iterable, Sized]] = None):
+        pass
+
+    def to_dict(self) -> dict[str, Any]:
+        pass
+
+    def to_records(self) -> list[dict]:
+        pass
+
+    def loc(self, items: Iterable) -> Iterable:
+        pass
+
+    def iloc(self, items: Iterable) -> Iterable:
+        pass
+
+
+class SparkDataset(SparkNavigation, DatasetBackendCalc):
+    def __init__(
+            self, 
+            data: Optional[Union[spark.DataFrame, pd.DataFrame, dict, str]] = None, 
+            session: SparkSession = None
+            ):
+        super().__init__(data, session)
+
+    @staticmethod
+    def _convert_agg_result(result):
+        pass
+    
+    def get_values(
+        self,
+        row: Optional[str] = None,
+        column: Optional[str] = None,
+    ) -> Any:
+        pass
+
+    def iget_values(
+        self,
+        row: Optional[int] = None,
+        column: Optional[int] = None,
+    ) -> Any:
+        pass
+
+    def apply(self, func: Callable, **kwargs) -> spark.DataFrame:
+        pass
+
+    def map(self, func: Callable, **kwargs) -> spark.DataFrame:
+        pass
+
+    def is_empty(self) -> bool:
+        pass
+
+    def unique(self):
+        pass
+
+    def nunique(self, dropna: bool = True):
+        pass
+
+    def groupby(self, by: Union[str, Iterable[str]], **kwargs) -> list[tuple]:
+        pass
+
+    def agg(self, func: Union[str, list], **kwargs) -> Union[spark.DataFrame, float]:
+        pass
+
+    def max(self) -> Union[spark.DataFrame, float]:
+        pass
+
+    def idxmax(self) -> Union[spark.DataFrame, float]:
+        pass
+
+    def min(self) -> Union[spark.DataFrame, float]:
+        pass
+
+    def count(self) -> Union[spark.DataFrame, float]:
+        pass
+
+    def sum(self) -> Union[spark.DataFrame, float]:
+        pass
+
+    def mean(self) -> Union[spark.DataFrame, float]:
+        pass
+
+    def mode(
+        self, numeric_only: bool = False, dropna: bool = True
+    ) -> Union[spark.DataFrame, float]:
+        pass
+
+    def var(
+        self, skipna: bool = True, ddof: int = 1, numeric_only: bool = False
+    ) -> Union[spark.DataFrame, float]:
+        pass
+
+    def log(self) -> spark.DataFrame:
+        pass
+
+    def std(self, skipna: bool = True, ddof: int = 1) -> Union[spark.DataFrame, float]:
+        pass
+
+    def cov(self):
+        pass
+
+    def quantile(self, q: float = 0.5) -> spark.DataFrame:
+        pass
+
+    def coefficient_of_variation(self) -> Union[spark.DataFrame, float]:
+        pass
+
+    def sort_index(self, ascending: bool = True, **kwargs) -> spark.DataFrame:
+        pass
+
+    def corr(
+        self,
+        method: Literal["pearson", "kendall", "spearman"] = "pearson",
+        numeric_only: bool = False,
+    ) -> Union[spark.DataFrame, float]:
+        pass
+
+    def isna(self) -> spark.DataFrame:
+        pass
+
+    def sort_values(
+        self, by: Union[str, list[str]], ascending: bool = True, **kwargs
+    ) -> spark.DataFrame:
+        pass
+
+    def value_counts(
+        self,
+        normalize: bool = False,
+        sort: bool = True,
+        ascending: bool = False,
+        dropna: bool = True,
+    ) -> spark.DataFrame:
+        pass
+
+    def fillna(
+        self,
+        values: Optional[Union[ScalarType, dict[str, ScalarType]]] = None,
+        method: Optional[Literal["bfill", "ffill"]] = None,
+        **kwargs,
+    ) -> spark.DataFrame:
+        pass
+
+    def na_counts(self) -> Union[spark.DataFrame, int]:
+        pass
+
+    def dot(self, other: Union["SparkDataset", np.ndarray]) -> spark.DataFrame:
+        pass
+
+    def dropna(
+        self,
+        how: Literal["any", "all"] = "any",
+        subset: Optional[Union[str, Iterable[str]]] = None,
+        axis: Union[Literal["index", "rows", "columns"], int] = 0,
+    ) -> spark.DataFrame:
+        pass
+
+    def transpose(self, names: Optional[Sequence[str]] = None) -> spark.DataFrame:
+        pass
+
+    def sample(
+        self,
+        frac: Optional[float] = None,
+        n: Optional[int] = None,
+        random_state: Optional[int] = None,
+    ) -> spark.DataFrame:
+        pass
+
+    def select_dtypes(
+        self,
+        include: Optional[str] = None,
+        exclude: Optional[str] = None,
+    ) -> spark.DataFrame:
+        pass
+
+    def isin(self, values: Iterable) -> Iterable[bool]:
+        pass
+
+    def merge(
+        self,
+        right: "SparkDataset",
+        on: Optional[str] = None,
+        left_on: Optional[str] = None,
+        right_on: Optional[str] = None,
+        left_index: Optional[bool] = None,
+        right_index: Optional[bool] = None,
+        suffixes: tuple[str, str] = ("_x", "_y"),
+        how: Literal["left", "right", "inner", "outer", "cross"] = "inner",
+    ) -> spark.DataFrame:
+        pass
+
+    def drop(self, labels: str = "", axis: int = 1) -> spark.DataFrame:
+        pass
+
+    def filter(
+        self,
+        items: Optional[list] = None,
+        like: Optional[str] = None,
+        regex: Optional[str] = None,
+        axis: int = 0,
+    ) -> spark.DataFrame:
+        pass
+
+    def rename(self, columns: dict[str, str]) -> spark.DataFrame:
+        pass
+
+    def replace(
+        self, to_replace: Any = None, value: Any = None, regex: bool = False
+    ) -> spark.DataFrame:
+        pass
+
+    def reindex(self, labels: str = "", fill_value: Optional[str] = None) -> spark.DataFrame:
+        pass
+
+    def list_to_columns(self, column: str) -> spark.DataFrame:
+        pass
