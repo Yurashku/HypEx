@@ -57,7 +57,6 @@ class DatasetBase(ABC):
         data: pd.DataFrame | str | None = None,
         backend: BackendsEnum | None = None,
         default_role: ABCRole | None = None,
-        features_mapping: dict[str, dict[tuple[str, int], list[str]]] | None = None,
     ):
         self._backend = (
             self._select_backend_from_str(data, backend)
@@ -83,7 +82,6 @@ class DatasetBase(ABC):
         self._tmp_roles: (
             dict[ABCRole, list[str] | str] | dict[list[str] | str] | ABCRole
         ) = {}
-        self.features_mapping = features_mapping or {}
 
     def __repr__(self):
         return self.data.__repr__()
