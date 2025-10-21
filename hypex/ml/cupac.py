@@ -2,7 +2,7 @@ from typing import Any, Optional
 import numpy as np
 from copy import deepcopy
 from ..dataset.dataset import Dataset, ExperimentData
-from ..dataset.roles import TargetRole, StatisticRole, FeatureRole
+from ..dataset.roles import TargetRole, StatisticRole, FeatureRole, AdditionalTargetRole
 from ..executor import MLExecutor
 from ..utils import ExperimentDataEnum
 from ..utils.enums import BackendsEnum
@@ -22,18 +22,26 @@ class CUPACExecutor(MLExecutor):
     ):
         super().__init__(target_role=TargetRole(), key=key)
         self.cupac_models = cupac_models
-        self.n_folds = n_folds
-        self.random_state = random_state
+        self.fitted_models = {}
+        self.extension = CupacExtension(n_folds, random_state)
 
     def _validate_models(self) -> None:
         wrong_models = []
         if self.cupac_models is None:
             self.cupac_models = list(CUPAC_MODELS.keys())
             return
+        
+        if isinstance(self.cupac_models, str):
+            self.cupac_models = [self.cupac_models]
+        
         self.cupac_models = [model.lower() for model in self.cupac_models]
+        
         for model in self.cupac_models:
             if model not in CUPAC_MODELS:
                 wrong_models.append(model)
+            elif CUPAC_MODELS[model] is None:
+                raise ValueError(f"Model '{model}' is not available for the current backend")
+        
         if wrong_models:
             raise ValueError(f"Wrong cupac models: {wrong_models}. Available models: {list(CUPAC_MODELS.keys())}")
 
@@ -108,19 +116,19 @@ class CUPACExecutor(MLExecutor):
         pass
 
     def fit(self, model, X, Y):
-        return CupacExtension().fit(
+        var_red, fitted_model = self.extension.fit(
             model=model,
             X=X,
             Y=Y,
-            n_folds=self.n_folds,
-            random_state=self.random_state
         )
 
+        self.fitted_models[model] = fitted_model
+        return var_red
+
     def predict(self, model, X):
-        return CupacExtension().predict(
+        return self.extension.predict(
             model=model,
             X=X,
-            random_state=self.random_state
         )
 
     def get_variance_reductions(self): pass 
@@ -128,6 +136,8 @@ class CUPACExecutor(MLExecutor):
     @staticmethod
     def _agg_data_from_cupac_data(data, cupac_data_slice):
         res_dataset = None
+        column_counter = 0
+        
         for column in cupac_data_slice:
             if len(column) == 1:
                 col_data = data.ds[column[0]]
@@ -142,6 +152,10 @@ class CUPACExecutor(MLExecutor):
                         res_lag_column = res_lag_column.append(tmp_dataset, reset_index=True, axis=0)
                 col_data = res_lag_column
             
+            standard_col_name = f"{column_counter}"
+            col_data = col_data.rename({list(col_data.columns)[0]: standard_col_name})
+            column_counter += 1
+            
             if res_dataset is None:
                 res_dataset = col_data
             else:
@@ -152,6 +166,7 @@ class CUPACExecutor(MLExecutor):
     def execute(self, data: ExperimentData) -> ExperimentData:
         self._validate_models()
         cupac_data = self._prepare_data(data)
+        print(cupac_data)
         for target in cupac_data.keys():
             best_model, best_var_red = None, None
             for model in self.cupac_models:
@@ -161,15 +176,31 @@ class CUPACExecutor(MLExecutor):
                 )
                 Y_train = CUPACExecutor._agg_data_from_cupac_data(
                     data,
-                    cupac_data[target]['Y_train']
+                    [cupac_data[target]['Y_train']]
                 )
                 var_red = self.fit(
                     model,
                     X_train,
                     Y_train
                     )
-                
                 if best_var_red is None or var_red > best_var_red:
                     best_model, best_var_red = model, var_red
 
-            print(best_model, best_var_red)
+            if best_model is None:
+                raise RuntimeError(f"No models were successfully fitted for target '{target}'. All models failed during training.")
+                
+            if 'X_predict' in cupac_data[target]:
+                X_predict = CUPACExecutor._agg_data_from_cupac_data(
+                    data,
+                    cupac_data[target]['X_predict']
+                )
+                prediction = self.predict(self.fitted_models[best_model], X_predict)
+                target_cupac = data.ds[target].mean() + (data.ds[target] - prediction)
+                target_cupac = target_cupac.rename({target: f"{target}_cupac"})
+                data.additional_fields = data.additional_fields.add_column(
+                    data=target_cupac,
+                    role={f"{target}_cupac": AdditionalTargetRole()}
+                )
+            
+            data.analysis_tables[f"{target}_best_model"] = best_model
+            data.analysis_tables[f"{target}_variance_reduction"] = best_var_red

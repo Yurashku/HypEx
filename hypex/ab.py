@@ -43,7 +43,7 @@ class ABTest(ExperimentShell):
             multitest_method=ABNTestMethodsEnum.bonferroni,
             cuped_features={"target_feature": "pre_target_feature"},
             enable_cupac=True,
-            cupac_model=['linear', 'ridge']
+            cupac_models=['linear', 'ridge']
         )
         results = ab_test.execute(data)
     """
@@ -55,7 +55,7 @@ class ABTest(ExperimentShell):
         ),
         multitest_method: ABNTestMethodsEnum | None,
         cuped_features: dict[str, str] | None,
-        cupac_model: str | list[str] | None,
+        cupac_models: str | list[str] | None,
         enable_cupac: bool,
     ) -> Experiment:
         test_mapping: dict[str, Executor] = {
@@ -96,7 +96,7 @@ class ABTest(ExperimentShell):
         
         if enable_cupac:
             from .ml import CUPACExecutor
-            executors.insert(0, CUPACExecutor(cupac_model=cupac_model))
+            executors.insert(0, CUPACExecutor(cupac_models=cupac_models))
 
         return Experiment(executors=executors)
 
@@ -110,7 +110,7 @@ class ABTest(ExperimentShell):
         multitest_method: ABNTestMethodsEnum | None = ABNTestMethodsEnum.holm,
         t_test_equal_var: bool | None = None,
         cuped_features: dict[str, str] | None = None,
-        cupac_model: str | list[str] | None = None,
+        cupac_models: str | list[str] | None = None,
         enable_cupac: bool = False,
         ):
         """
@@ -119,11 +119,11 @@ class ABTest(ExperimentShell):
             multitest_method: Method to use for multiple testing correction. Valid options are ABNTestMethodsEnum.bonferroni, ABNTestMethodsEnum.sidak, etc. Defaults to ABNTestMethodsEnum.holm.
             t_test_equal_var: Whether to use equal variance in t-test (optional).
             cuped_features: dict[str, str] — Dictionary {target_feature: pre_target_feature} for CUPED. Only dict is allowed.
-            cupac_model: str | list[str] — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try. If None, all available models will be tried and the best will be selected by variance reduction.
+            cupac_models: str | list[str] — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try. If None, all available models will be tried and the best will be selected by variance reduction.
             enable_cupac: bool — Enable CUPAC variance reduction. CUPAC configuration is extracted from dataset.features_mapping.
         """
         super().__init__(
-            experiment=self._make_experiment(additional_tests, multitest_method, cuped_features, cupac_model, enable_cupac),
+            experiment=self._make_experiment(additional_tests, multitest_method, cuped_features, cupac_models, enable_cupac),
             output=ABOutput(),
         )
         if t_test_equal_var is not None:
