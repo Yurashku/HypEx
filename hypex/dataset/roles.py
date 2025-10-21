@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
-from copy import deepcopy
+from copy import copy
 
 from ..utils import CategoricalTypes, DefaultRoleTypes, RoleNameType, TargetRoleTypes
 
@@ -12,6 +12,9 @@ class ABCRole(ABC):
     def __init__(self, data_type: DefaultRoleTypes | None = None):
         self.data_type = data_type
 
+    def __copy__(self, data_type: DefaultRoleTypes | None = None):
+        return type(self)(data_type or self.data_type)
+
     @property
     def role_name(self) -> str:
         return self._role_name
@@ -20,7 +23,7 @@ class ABCRole(ABC):
         return f"{self._role_name}({self.data_type})"
 
     def astype(self, data_type: DefaultRoleTypes | None = None) -> ABCRole:
-        role = deepcopy(self)
+        role = copy(self)
         role.data_type = data_type
         return role
 
@@ -30,7 +33,7 @@ class ABCRole(ABC):
             if isinstance(role_type, self.__class__) and isinstance(role_type, AdditionalRole):
                 return role_type.__class__(data_type)
         return self.__class__(data_type)
-
+    
 
 class InfoRole(ABCRole):
     _role_name: RoleNameType = "Info"

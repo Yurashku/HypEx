@@ -3,12 +3,13 @@ from __future__ import annotations
 import copy
 import json  # type: ignore
 from abc import ABC
-from typing import Any, Iterable
+from typing import Any, Iterable, Union, Optional
 
 import pandas as pd  # type: ignore
+import pyspark.sql as spark
 
 from ..utils import BackendsEnum, RoleColumnError
-from .backends import PandasDataset
+from .backends import PandasDataset, SparkDataset
 from .roles import ABCRole, DefaultRole, default_roles
 
 
@@ -27,14 +28,22 @@ def parse_roles(roles: dict) -> dict[str | int] | ABCRole:
 
 class DatasetBase(ABC):
     @staticmethod
-    def _select_backend_from_data(data):
-        return PandasDataset(data)
+    def _select_backend_from_data(data, session=None):
+        if isinstance(data, pd.DataFrame):
+            return PandasDataset(data)
+        elif isinstance(data, spark.DataFrame):
+            return SparkDataset(data, session)
+        raise TypeError("Data must be an instance of either pandas.DataFrame or spark.DataFrame")
 
     @staticmethod
-    def _select_backend_from_str(data, backend):
+    def _select_backend_from_str(data, backend, session=None):
         if backend == BackendsEnum.pandas:
             return PandasDataset(data)
-        if backend is None:
+        elif backend == BackendsEnum.spark:
+            return SparkDataset(data, session)
+        elif backend is None:
+            if session is not None:
+                return SparkDataset(data, session)
             return PandasDataset(data)
         raise TypeError("Backend must be an instance of BackendsEnum")
 
@@ -49,32 +58,36 @@ class DatasetBase(ABC):
         for column, role in roles.items():
             if role.data_type is None:
                 role.data_type = self._backend.get_column_type(column)
-            self._backend = self._backend.update_column_type(column, role.data_type)
+                self._backend = self._backend.update_column_type(column, role.data_type)
 
     def __init__(
         self,
         roles: dict[ABCRole, list[str] | str] | dict[str, ABCRole],
-        data: pd.DataFrame | str | None = None,
+        data: Optional[Union[DatasetBase, pd.DataFrame, str]] = None,
         backend: BackendsEnum | None = None,
+        session: Any = None,
         default_role: ABCRole | None = None,
     ):
         self._backend = (
-            self._select_backend_from_str(data, backend)
+            self._select_backend_from_str(data, backend, session)
             if backend
-            else self._select_backend_from_data(data)
+            else self._select_backend_from_data(data, session)
         )
         self.default_role = default_role
-        roles = (
-            parse_roles(roles)
-            if any(isinstance(role, ABCRole) for role in roles.keys())
-            else roles
-        )
-        if any(not isinstance(role, ABCRole) for role in roles.values()):
-            raise TypeError("Roles must be instances of ABCRole type")
-        if data is not None and any(
-            i not in self._backend.columns for i in list(roles.keys())
-        ):
-            raise RoleColumnError(list(roles.keys()), self._backend.columns)
+        if roles is None and data.hasattr("roles") and data.roles is not None:
+            roles = data.roles
+        else: 
+            roles = (
+                parse_roles(roles)
+                if any(isinstance(role, ABCRole) for role in roles.keys())
+                else roles
+            )
+            if any(not isinstance(role, ABCRole) for role in roles.values()):
+                raise TypeError("Roles must be instances of ABCRole type")
+            if data is not None and any(
+                i not in self._backend.columns for i in list(roles.keys())
+            ):
+                raise RoleColumnError(list(roles.keys()), self._backend.columns)
         if data is not None:
             roles = self._set_all_roles(roles)
             self._set_empty_types(roles)

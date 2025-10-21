@@ -382,7 +382,7 @@ class DatasetBackendCalc(DatasetBackendNavigation, ABC):
         regex: str | None = None,
         axis: int = 0,
     ) -> Any:
-        return AbstractMethodError
+        raise AbstractMethodError
 
     def fillna(self, values, method, **kwargs) -> Any:
         raise AbstractMethodError
@@ -397,7 +397,7 @@ class DatasetBackendCalc(DatasetBackendNavigation, ABC):
 
     @abstractmethod
     def rename(self, columns: dict[str, str]) -> Any:
-        return AbstractMethodError
+        raise AbstractMethodError
 
     @abstractmethod
     def replace(

@@ -22,10 +22,6 @@ class OneAAStatAnalyzer(Executor):
         executor_ids = data.get_ids(
             analysis_tests, searched_space=ExperimentDataEnum.analysis_tables
         )
-        # num_groups = len(data.groups[data.ds.search_columns(TreatmentRole())[0]]) - 1
-        # groups = list(data.groups[data.ds.search_columns(TreatmentRole())[0]].items())
-        # multitest_pvalues = Dataset.create_empty()
-        # analysis_data = {}
 
         analysis_data: dict[str, float] = {}
         for class_, spaces in executor_ids.items():
@@ -65,7 +61,7 @@ class OneAAStatAnalyzer(Executor):
 
         analysis_dataset = Dataset.from_dict(
             [analysis_data],
-            {field: StatisticRole() for field in analysis_data},
+            {field: StatisticRole(float) for field in analysis_data},
             BackendsEnum.pandas,
         )
 
@@ -165,7 +161,7 @@ class AAScoreAnalyzer(Executor):
                         + x["mean test score"] / 3
                     ),
                     axis=1,
-                    role={"aa split score": StatisticRole()},
+                    role={"aa split score": StatisticRole(float)},
                 )
                 best_index = aa_split_scores.idxmax()
             best_split_id = score_table.loc[best_index, "splitter_id"].get_values(0, 0)

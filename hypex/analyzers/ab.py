@@ -125,7 +125,7 @@ class ABAnalyzer(Executor):
 
         analysis_dataset = Dataset.from_dict(
             [analysis_data],
-            {f: StatisticRole() for f in analysis_data},
+            {f: StatisticRole(float) for f in analysis_data},
             BackendsEnum.pandas,
         )
         data = self.execute_multitest(

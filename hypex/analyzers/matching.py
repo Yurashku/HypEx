@@ -20,6 +20,6 @@ class MatchingAnalyzer(Executor):
             data,
             DatasetAdapter.to_dataset(
                 variables,
-                {field: StatisticRole() for field in list(variables.keys())},
-            ).transpose(roles={column: StatisticRole() for column in columns}),
+                {field: StatisticRole(float) for field in list(variables.keys())},
+            ).transpose(roles={column: StatisticRole(float) for column in columns}),
         )
