@@ -2,12 +2,10 @@ from typing import Any, Optional
 import numpy as np
 from copy import deepcopy
 from ..dataset.dataset import Dataset, ExperimentData
-from ..dataset.roles import TargetRole, StatisticRole
+from ..dataset.roles import TargetRole, StatisticRole, FeatureRole
 from ..executor import MLExecutor
 from ..utils import ExperimentDataEnum
 from ..utils.enums import BackendsEnum
-
-
 
 from ..extensions.cupac import CupacExtension
 
@@ -15,169 +13,163 @@ from typing import Union, Sequence
 from ..utils.models import CUPAC_MODELS
 
 class CUPACExecutor(MLExecutor):
-    """Executor that fits predictive models to pre-period covariates and adjusts target
-    features using the CUPAC approach (model-based prediction adjustment similar to CUPED).
-    
-    CUPAC configuration is extracted from dataset.features_mapping with format:
-    {
-        "target_column": {
-            ("pre_target_col", period): ["cov1", "cov2", ...],
-            ...
-        }
-    }
-    """
     def __init__(
         self,
-        cupac_model: Union[str, Sequence[str], None] = None,
+        cupac_models: Union[str, Sequence[str], None] = None,
         key: Any = "",
         n_folds: int = 5,
         random_state: Optional[int] = None,
     ):
-        """
-        Args:
-            cupac_model: str or list of str — model name (e.g. 'linear', 'ridge', 'lasso', 'catboost') or list of model names to try.
-            key: key for executor.
-            n_folds: number of folds for cross-validation.
-            random_state: random seed.
-        """
         super().__init__(target_role=TargetRole(), key=key)
-        self.cupac_model = cupac_model
+        self.cupac_models = cupac_models
         self.n_folds = n_folds
         self.random_state = random_state
-        self.is_fitted = False
+
+    def _validate_models(self) -> None:
+        wrong_models = []
+        if self.cupac_models is None:
+            self.cupac_models = list(CUPAC_MODELS.keys())
+            return
+        self.cupac_models = [model.lower() for model in self.cupac_models]
+        for model in self.cupac_models:
+            if model not in CUPAC_MODELS:
+                wrong_models.append(model)
+        if wrong_models:
+            raise ValueError(f"Wrong cupac models: {wrong_models}. Available models: {list(CUPAC_MODELS.keys())}")
+
+    def _prepare_data(self, data: ExperimentData):
+
+        def agg_temporal_fields(role, data):
+            fields = {}
+            searched_fields = data.field_search(role, search_types=[int, float])
+            searched_lags = [(field, data.ds.roles[field].lag if data.ds.roles[field].lag is not None else 0) for field in searched_fields]
+            sorted_fields_by_lag = sorted(searched_lags, key=lambda x: x[1])
+            for field, lag in sorted_fields_by_lag:
+                if lag in [None , 0]:
+                    fields[field] = {}
+                else:
+                    if data.ds.roles[field].parent in fields:
+                        fields[data.ds.roles[field].parent][lag] = field
+                    else:
+                        fields[data.ds.roles[field].parent] = {}
+                        fields[data.ds.roles[field].parent][lag] = field
+            return fields
+
+        def agg_train_predict_x(mode, lag):
+            for i in range(len(data.ds.roles[target].cofounders)):
+                feature = data.ds.roles[target].cofounders[i]
+                if lag in [1, max_lags[target]]:
+                    cupac_data[target][mode].append([features[feature][lag]])
+                else:
+                    cupac_data[target][mode][i].append(feature)
+
+            cupac_data[target][mode].append([targets[target][lag]])
 
 
-
-    def get_models(self, backend_name: str) -> tuple[dict[str, Any], Sequence[str]]:
-        """
-        Get available models for backend and select explicit models to use.
-        Returns (available_models_dict, explicit_models_list)
-        """
-        # Get models available for this backend
-        available_models = {}
-        for model_name, backends in CUPAC_MODELS.items():
-            if backend_name in backends and backends[backend_name] is not None:
-                available_models[model_name.lower()] = backends[backend_name]
+        cupac_data = {}
+        targets = agg_temporal_fields(TargetRole(), data)
+        features = agg_temporal_fields(FeatureRole(), data)
         
-        # Select explicit models
-        if self.cupac_model:
-            if isinstance(self.cupac_model, str):
-                names = [self.cupac_model.lower()]
-            else:
-                names = [m.lower() for m in self.cupac_model]
-            
-            # Filter to only models available for current backend
-            available_names = [name for name in names if name in available_models]
-            return available_models, available_names
-        return available_models, list(available_models.keys())
+        max_lags = {}
+        for target, lags in targets.items():
+            if lags:
+                max_lag = max(lags.keys())
+                for feature in data.ds.roles[target].cofounders:
+                    if feature in features and features[feature]:
+                        max_lag = max(max(features[feature].keys()), max_lag)
+            max_lags[target] = max_lag
+        
+        for target in targets.keys():
+
+            cupac_data[target] = {
+                'X_train': [],
+                'Y_train': []
+            }
+            if target in data.ds.columns:
+                cupac_data[target]['X_predict'] = []
+
+            for lag in range(max_lags[target], 0, -1):
+                if lag == 1:
+                    agg_train_predict_x('X_predict', lag)
+                else:
+                    agg_train_predict_x('X_train', lag)
+                    cupac_data[target]['Y_train'].append(targets[target][lag - 1])
+
+        return cupac_data
+
+
 
     @classmethod
-    def _inner_function(
-        cls,
-        data: Dataset,
-        cupac_model: Optional[str] = None,
-        n_folds: int = 5,
-        random_state: Optional[int] = None,
-        **kwargs,
-    ) -> dict[str, np.ndarray]:
-        """Inner function that creates instance, fits and predicts."""
-        instance = cls(
-            cupac_model=cupac_model,
-            n_folds=n_folds,
-            random_state=random_state,
+    def _execute_inner_function():
+        pass
+
+    @classmethod
+    def _inner_function():
+        pass
+
+    def fit(self, model, X, Y):
+        return CupacExtension().fit(
+            model=model,
+            X=X,
+            Y=Y,
+            n_folds=self.n_folds,
+            random_state=self.random_state
         )
-        # Extract features_mapping from dataset if available
-        if hasattr(data, 'features_mapping') and data.features_mapping:
-            # Create extension with features_mapping
-            backend_name = data.backend.name
-            available_models, explicit_models = instance.get_models(backend_name)
-            
-            instance.extension = CupacExtension(
-                available_models=available_models,
-                explicit_models=explicit_models,
-                n_folds=n_folds,
-                random_state=random_state,
-                features_mapping=data.features_mapping
-            )
-            # Extract CUPAC configuration from features_mapping
-            if not instance.extension.extract_cupac_from_features_mapping(data):
-                raise ValueError("Failed to extract CUPAC configuration from dataset.features_mapping")
-        else:
-            raise ValueError("No features_mapping found in Dataset. CUPAC requires features_mapping.")
-        
-        instance.fit(data)
-        return instance.predict(data)
 
-    def fit(self, X: Dataset) -> "CUPACExecutor":
-        if not hasattr(self, 'extension') or not self.extension:
-            raise RuntimeError("Extension not initialized. Call through execute() method.")
-        
-        self.extension.calc(X, mode="fit")
-        self.is_fitted = True
-        return self
+    def predict(self, model, X):
+        return CupacExtension().predict(
+            model=model,
+            X=X,
+            random_state=self.random_state
+        )
 
-    def predict(self, X: Dataset) -> dict[str, np.ndarray]:
-        if not hasattr(self, "extension"):
-            raise RuntimeError("CUPACExecutor not fitted. Call fit() first.")
-        return self.extension.calc(X, mode="predict")
+    def get_variance_reductions(self): pass 
 
-    def get_variance_reductions(self):
-        if not hasattr(self, "extension"):
-            raise RuntimeError("CUPACExecutor not fitted. Call fit() first.")
-        return self.extension.get_variance_reductions()
-
-
-
-
-    
-    def execute(self, data: ExperimentData) -> ExperimentData:
-        # Extract features_mapping from dataset if available
-        dataset = data.ds
-        if hasattr(dataset, 'features_mapping') and dataset.features_mapping:
-            # Determine backend and get models
-            backend_key = "pandasdataset"  # Default backend
-            available_models = {name: model_dict[backend_key] for name, model_dict in CUPAC_MODELS.items() if model_dict[backend_key] is not None}
-            
-            # Determine explicit models
-            explicit_models = []
-            if self.cupac_model:
-                if isinstance(self.cupac_model, str):
-                    explicit_models = [self.cupac_model]
-                elif isinstance(self.cupac_model, (list, tuple)):
-                    explicit_models = list(self.cupac_model)
+    @staticmethod
+    def _agg_data_from_cupac_data(data, cupac_data_slice):
+        res_dataset = None
+        for column in cupac_data_slice:
+            if len(column) == 1:
+                col_data = data.ds[column[0]]
             else:
-                # Use all available models if none specified
-                explicit_models = list(available_models.keys())
+                res_lag_column = None
+                for lag_column in column:
+                    tmp_dataset = data.ds[lag_column]
+                    tmp_dataset = tmp_dataset.rename({lag_column: column[0]})
+                    if res_lag_column is None:
+                        res_lag_column = tmp_dataset
+                    else:
+                        res_lag_column = res_lag_column.append(tmp_dataset, reset_index=True, axis=0)
+                col_data = res_lag_column
             
-            # Create extension with proper models
-            self.extension = CupacExtension(
-                available_models=available_models,
-                explicit_models=explicit_models,
-                n_folds=self.n_folds,
-                random_state=self.random_state,
-                features_mapping=dataset.features_mapping  # Pass original features_mapping
-            )
-            # Extract CUPAC configuration from features_mapping
-            if not self.extension.extract_cupac_from_features_mapping(dataset):
-                raise ValueError("Failed to extract CUPAC configuration from dataset.features_mapping")
-        else:
-            raise ValueError("No features_mapping found in Dataset. CUPAC requires features_mapping.")
-        
-        if not self.extension.cupac_features:
-            raise ValueError("No CUPAC configuration found. Please provide features_mapping in Dataset.")
-        
-        self.fit(data.ds)
-        predictions = self.predict(data.ds)
-        new_ds = deepcopy(data.ds)  # Create a deep copy to avoid modifying original dataset
-        for key, pred in predictions.items():
-            if hasattr(pred, 'values'):
-                pred = pred.values
-            new_ds = new_ds.add_column(data=pred, role={key: TargetRole()})
-        # Save variance reductions to additional_fields
-        variance_reductions = self.get_variance_reductions()
-        for key, reduction in variance_reductions.items():
-            data.additional_fields = data.additional_fields.add_column(
-                data=[reduction],
-                role={key: StatisticRole()}
-            )
-        return data.copy(data=new_ds)
+            if res_dataset is None:
+                res_dataset = col_data
+            else:
+                res_dataset = res_dataset.add_column(data=col_data)
+        return res_dataset
+
+
+    def execute(self, data: ExperimentData) -> ExperimentData:
+        self._validate_models()
+        cupac_data = self._prepare_data(data)
+        for target in cupac_data.keys():
+            best_model, best_var_red = None, None
+            for model in self.cupac_models:
+                X_train = CUPACExecutor._agg_data_from_cupac_data(
+                    data,
+                    cupac_data[target]['X_train']
+                )
+                Y_train = CUPACExecutor._agg_data_from_cupac_data(
+                    data,
+                    cupac_data[target]['Y_train']
+                )
+                var_red = self.fit(
+                    model,
+                    X_train,
+                    Y_train
+                    )
+                
+                if best_var_red is None or var_red > best_var_red:
+                    best_model, best_var_red = model, var_red
+
+            print(best_model, best_var_red)

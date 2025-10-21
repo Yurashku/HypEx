@@ -102,9 +102,8 @@ class Dataset(DatasetBase):
         data: pd.DataFrame | str | None = None,
         backend: BackendsEnum | None = None,
         default_role: ABCRole | None = None,
-        features_mapping: dict[str, dict[tuple[str, int], list[str]]] | None = None,
     ):
-        super().__init__(roles, data, backend, default_role, features_mapping)
+        super().__init__(roles, data, backend, default_role)
         self.loc = self.Locker(self._backend, self.roles)
         self.iloc = self.ILocker(self._backend, self.roles)
 

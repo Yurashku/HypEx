@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 
-from ..utils import CategoricalTypes, DefaultRoleTypes, RoleNameType, TargetRoleTypes
+from ..utils import CategoricalTypes, DefaultRoleTypes, FeatureRoleTypes, RoleNameType, TargetRoleTypes
 
 
 class ABCRole(ABC):
@@ -17,6 +17,30 @@ class ABCRole(ABC):
 
     def __repr__(self) -> str:
         return f"{self._role_name}({self.data_type})"
+
+
+class TemporalRole(ABCRole):
+    """Base class for roles that support temporal metadata (parent, lag)."""
+    
+    def __init__(
+        self,
+        data_type: DefaultRoleTypes | None = None,
+        parent: str | None = None,
+        lag: int | None = None,
+    ):
+        super().__init__(data_type)
+        self.parent = parent
+        self.lag = lag
+
+    def __repr__(self) -> str:
+        parts = []
+        if self.data_type is not None:
+            parts.append(f"data_type={self.data_type}")
+        if self.parent is not None:
+            parts.append(f"parent='{self.parent}'")
+        if self.lag is not None:
+            parts.append(f"lag={self.lag}")
+        return f"{self._role_name}({', '.join(parts)})" if parts else f"{self._role_name}()"
 
 
 class InfoRole(ABCRole):
@@ -41,15 +65,30 @@ class TreatmentRole(ABCRole):
     _role_name: RoleNameType = "Treatment"
 
 
-class TargetRole(ABCRole):
+class TargetRole(TemporalRole):
     _role_name: RoleNameType = "Target"
 
-    def __init__(self, data_type: TargetRoleTypes | None = None):
-        super().__init__(data_type)
+    def __init__(
+        self,
+        data_type: TargetRoleTypes | None = None,
+        parent: str | None = None,
+        lag: int | None = None,
+        cofounders: list[str] | None = None,
+    ):
+        super().__init__(data_type=data_type, parent=parent, lag=lag)
+        self.cofounders = cofounders if cofounders is not None else []
 
 
-class FeatureRole(ABCRole):
+class FeatureRole(TemporalRole):
     _role_name: RoleNameType = "Feature"
+
+    def __init__(
+        self,
+        data_type: FeatureRoleTypes | None = None,
+        parent: str | None = None,
+        lag: int | None = None,
+    ):
+        super().__init__(data_type=data_type, parent=parent, lag=lag)
 
 
 class PreTargetRole(ABCRole):
