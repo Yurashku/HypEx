@@ -3,10 +3,11 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterable
 from copy import deepcopy
-from typing import Any, Callable, Hashable, Literal, Sequence
+from typing import Any, Callable, Hashable, Literal, Optional, Sequence
 
 import pandas as pd  # type: ignore
 from numpy import ndarray
+import pyspark.sql as spark
 
 from ..utils import (
     ID_SPLIT_SYMBOL,
@@ -102,8 +103,9 @@ class Dataset(DatasetBase):
         data: pd.DataFrame | str | None = None,
         backend: BackendsEnum | None = None,
         default_role: ABCRole | None = None,
+        session: Optional[spark.SparkSession] = None,
     ):
-        super().__init__(roles, data, backend, default_role)
+        super().__init__(roles, data, backend, default_role, session)
         self.loc = self.Locker(self._backend, self.roles)
         self.iloc = self.ILocker(self._backend, self.roles)
 
@@ -790,8 +792,14 @@ class ExperimentData:
             elif len(value.columns) == 1:
                 role = role[0] if isinstance(role, list) else role
                 role = list(role.values())[0] if isinstance(role, dict) else role
-                executor_id = executor_id[0] if isinstance(executor_id, list) else executor_id
-                executor_id = list(executor_id.keys())[0] if isinstance(executor_id, dict) else executor_id
+                executor_id = (
+                    executor_id[0] if isinstance(executor_id, list) else executor_id
+                )
+                executor_id = (
+                    list(executor_id.keys())[0]
+                    if isinstance(executor_id, dict)
+                    else executor_id
+                )
                 self.additional_fields = self.additional_fields.add_column(
                     data=value, role={executor_id: role}
                 )

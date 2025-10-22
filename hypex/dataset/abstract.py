@@ -33,7 +33,9 @@ class DatasetBase(ABC):
             return PandasDataset(data)
         elif isinstance(data, spark.DataFrame):
             return SparkDataset(data, session)
-        raise TypeError("Data must be an instance of either pandas.DataFrame or spark.DataFrame")
+        raise TypeError(
+            "Data must be an instance of either pandas.DataFrame or spark.DataFrame"
+        )
 
     @staticmethod
     def _select_backend_from_str(data, backend, session=None):
@@ -55,9 +57,11 @@ class DatasetBase(ABC):
         return roles
 
     def _set_empty_types(self, roles):
+        colunms_dtypes = self._backend.get_column_type(self._backend.columns)
         for column, role in roles.items():
             if role.data_type is None:
-                role.data_type = self._backend.get_column_type(column)
+                role.data_type = colunms_dtypes[column]
+            elif role.data_type != colunms_dtypes[column]:
                 self._backend = self._backend.update_column_type(column, role.data_type)
 
     def __init__(
@@ -65,18 +69,18 @@ class DatasetBase(ABC):
         roles: dict[ABCRole, list[str] | str] | dict[str, ABCRole],
         data: Optional[Union[DatasetBase, pd.DataFrame, str]] = None,
         backend: BackendsEnum | None = None,
-        session: Any = None,
         default_role: ABCRole | None = None,
+        session: Optional[spark.SparkSession] = None,
     ):
         self._backend = (
             self._select_backend_from_str(data, backend, session)
-            if backend
+            if backend or session
             else self._select_backend_from_data(data, session)
         )
         self.default_role = default_role
         if roles is None and data.hasattr("roles") and data.roles is not None:
             roles = data.roles
-        else: 
+        else:
             roles = (
                 parse_roles(roles)
                 if any(isinstance(role, ABCRole) for role in roles.keys())

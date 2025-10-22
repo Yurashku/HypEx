@@ -184,26 +184,33 @@ class PandasNavigation(DatasetBackendNavigation):
             else self.data.columns.get_indexer(column_name)
         )[0]
 
-    def get_column_type(self, column_name: str) -> type | None:
-        dtype = self.data.dtypes[column_name]
-        if pd.api.types.is_integer_dtype(dtype):
-            return int
-        elif pd.api.types.is_float_dtype(dtype):
-            return float
-        elif pd.api.types.is_object_dtype(dtype) and pd.api.types.is_list_like(
-            self.data[column_name].iloc[0]
-        ):
-            return object
-        elif (
-            pd.api.types.is_string_dtype(dtype)
-            or pd.api.types.is_object_dtype(dtype)
-            or dtype.name == "category"
-        ):
-            return str
-        elif pd.api.types.is_bool_dtype(dtype):
-            return bool
+    def get_column_type(
+        self, column_name: Union[List[str], str]
+    ) -> Optional[Union[Dict[str, type], type]]:
+        dtypes = {}
+        for k, v in self.data.dtypes[column_name]:
+            if pd.api.types.is_integer_dtype(v):
+                dtypes[k] = int
+            elif pd.api.types.is_float_dtype(v):
+                dtypes[k] = float
+            elif pd.api.types.is_object_dtype(v) and pd.api.types.is_list_like(
+                self.data[column_name].iloc[0]
+            ):
+                dtypes[k] = object
+            elif (
+                pd.api.types.is_string_dtype(v)
+                or pd.api.types.is_object_dtype(v)
+                or v == "category"
+            ):
+                dtypes[k] = str
+            elif pd.api.types.is_bool_dtype(v):
+                dtypes[k] = bool
+        if isinstance(column_name, list):
+            return dtypes
         else:
-            return None
+            if column_name in dtypes:
+                return dtypes[column_name]
+        return None
 
     def astype(
         self, dtype: dict[str, type], errors: Literal["raise", "ignore"] = "raise"

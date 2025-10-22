@@ -2,7 +2,18 @@ import os
 import sys
 
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal, Sequence, Sized, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Sequence,
+    Sized,
+    Optional,
+    Union,
+)
 
 import numpy as np
 import pandas as pd
@@ -17,10 +28,17 @@ from .abstract import DatasetBackendCalc, DatasetBackendNavigation
 
 class SparkNavigation(DatasetBackendNavigation):
     @staticmethod
-    def _read_file(filename: Union[str, Path], session: SparkSession) -> spark.DataFrame:
+    def _read_file(
+        filename: Union[str, Path], session: SparkSession
+    ) -> spark.DataFrame:
         file_extension = Path(filename).suffix
         if file_extension == ".csv":
-            return session.read.format("csv").option("header", "true").load(filename)
+            return (
+                session.read.format("csv")
+                .option("header", "true")
+                .option("inferSchema", "true")  # TODO: find faster solution in future
+                .load(filename)
+            )
         elif file_extension == ".parquet":
             return session.read.parquet(filename)
         else:
@@ -28,9 +46,14 @@ class SparkNavigation(DatasetBackendNavigation):
                 return session.read.table(filename)
             except:
                 raise ValueError(f"Unsupported file extension {file_extension}")
-            
+
     @staticmethod
-    def _get_spark_session(app_name: str = "HypEx", python_path=None, dynamic_allocation=True, mode="local"):
+    def _get_spark_session(
+        app_name: str = "HypEx",
+        python_path: Optional[str] = None,
+        dynamic_allocation: bool = True,
+        mode: Optional[str] = None,
+    ):
         if python_path is None:
             python_path = sys.executable
 
@@ -39,47 +62,51 @@ class SparkNavigation(DatasetBackendNavigation):
 
         if mode == "local":
             conf = (
-                SparkConf().
-                setAppName(app_name).
-                setMaster("local[*]").
-                set("spark.driver.memory", "6g").
-                set("spark.executor.memory", "6g")
+                SparkConf()
+                .setAppName(app_name)
+                .setMaster("local[*]")
+                .set("spark.driver.memory", "6g")
+                .set("spark.executor.memory", "6g")
             )
         else:
             conf = (
-                SparkConf().
-                setAppName(app_name).
+                SparkConf()
+                .setAppName(app_name)
+                .
                 # setMaster("yarn").
-                set("spark.executor.cores", "8").
-                set("spark.executor.memory", "8g").
-                set("spark.executor.memoryOverhead", "8g").
-                set("spark.driver.cores", "12").
-                set("spark.driver.memory", "16g").
-                set("spark.driver.maxResultSize", "32g").
-                set("spark.shuffle.service.enabled", "true").
-                set("spark.dynamicAllocation.enabled", dynamic_allocation).
-                set("spark.dynamicAllocation.initialExecutors", "6").
-                set("spark.dynamicAllocation.maxExecutors", "32").
-                set("spark.dynamicAllocation.executorIdleTimeout", "120s").
-                set("spark.dynamicAllocation.cachedExecutorIdleTimeout", "600s").
-                set("spark.port.maxRetries", "150")
+                set("spark.executor.cores", "8")
+                .set("spark.executor.memory", "8g")
+                .set("spark.executor.memoryOverhead", "8g")
+                .set("spark.driver.cores", "12")
+                .set("spark.driver.memory", "16g")
+                .set("spark.driver.maxResultSize", "32g")
+                .set("spark.shuffle.service.enabled", "true")
+                .set("spark.dynamicAllocation.enabled", dynamic_allocation)
+                .set("spark.dynamicAllocation.initialExecutors", "6")
+                .set("spark.dynamicAllocation.maxExecutors", "32")
+                .set("spark.dynamicAllocation.executorIdleTimeout", "120s")
+                .set("spark.dynamicAllocation.cachedExecutorIdleTimeout", "600s")
+                .set("spark.port.maxRetries", "150")
             )
 
         return SparkSession.builder.config(conf=conf).enableHiveSupport().getOrCreate()
 
     def __init__(
-            self, 
-            data: Optional[Union[spark.DataFrame, pd.DataFrame, dict, str]] = None, 
-            session: SparkSession = None):
+        self,
+        data: Optional[Union[spark.DataFrame, pd.DataFrame, dict, str]] = None,
+        session: SparkSession = None,
+    ):
         if session is None:
             if isinstance(data, spark.DataFrame):
                 self.session = data.spark
             else:
                 self.session = self._get_spark_session()
         else:
-            if not isinstance(session, SparkSession):
+            if isinstance(session, SparkSession):
+                self.session = session
+            else:
                 raise TypeError("Session must be an instance of SparkSession")
-        
+
         if isinstance(data, dict):
             if "index" in data.keys():
                 data = pd.DataFrame(data=data["data"], index=data["index"])
@@ -208,6 +235,7 @@ class SparkNavigation(DatasetBackendNavigation):
         columns: Optional[Iterable[str]] = None,
     ):
         pass
+
     @property
     def index(self):
         pass
@@ -225,8 +253,33 @@ class SparkNavigation(DatasetBackendNavigation):
     ) -> Union[int, Sequence[int]]:
         pass
 
-    def get_column_type(self, column_name: str) -> Optional[type]:
-        pass
+    def get_column_type(
+        self, column_name: Union[List[str], str]
+    ) -> Optional[Union[Dict[str, type], type]]:
+        dtypes = {}
+        for k, v in self.data.select(column_name).dtypes:
+            if pd.api.types.is_integer_dtype(v):
+                dtypes[k] = int
+            elif pd.api.types.is_float_dtype(v):
+                dtypes[k] = float
+            # elif pd.api.types.is_object_dtype(v) and pd.api.types.is_list_like(
+            #     self.data[column_name].iloc[0]
+            # ):
+            #     dtypes[k] = object
+            elif (
+                pd.api.types.is_string_dtype(v)
+                or pd.api.types.is_object_dtype(v)
+                or v == "category"
+            ):
+                dtypes[k] = str
+            elif pd.api.types.is_bool_dtype(v):
+                dtypes[k] = bool
+        if isinstance(column_name, list):
+            return dtypes
+        else:
+            if column_name in dtypes:
+                return dtypes[column_name]
+        return None
 
     def astype(
         self, dtype: dict[str, type], errors: Literal["raise", "ignore"] = "raise"
@@ -244,10 +297,14 @@ class SparkNavigation(DatasetBackendNavigation):
     ):
         pass
 
-    def append(self, other, reset_index: bool = False, axis: int = 0) -> spark.DataFrame:
+    def append(
+        self, other, reset_index: bool = False, axis: int = 0
+    ) -> spark.DataFrame:
         pass
 
-    def from_dict(self, data: FromDictTypes, index: Optional[Union[Iterable, Sized]] = None):
+    def from_dict(
+        self, data: FromDictTypes, index: Optional[Union[Iterable, Sized]] = None
+    ):
         pass
 
     def to_dict(self) -> dict[str, Any]:
@@ -265,16 +322,16 @@ class SparkNavigation(DatasetBackendNavigation):
 
 class SparkDataset(SparkNavigation, DatasetBackendCalc):
     def __init__(
-            self, 
-            data: Optional[Union[spark.DataFrame, pd.DataFrame, dict, str]] = None, 
-            session: SparkSession = None
-            ):
+        self,
+        data: Optional[Union[spark.DataFrame, pd.DataFrame, dict, str]] = None,
+        session: SparkSession = None,
+    ):
         super().__init__(data, session)
 
     @staticmethod
     def _convert_agg_result(result):
         pass
-    
+
     def get_values(
         self,
         row: Optional[str] = None,
@@ -456,7 +513,9 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
     ) -> spark.DataFrame:
         pass
 
-    def reindex(self, labels: str = "", fill_value: Optional[str] = None) -> spark.DataFrame:
+    def reindex(
+        self, labels: str = "", fill_value: Optional[str] = None
+    ) -> spark.DataFrame:
         pass
 
     def list_to_columns(self, column: str) -> spark.DataFrame:
