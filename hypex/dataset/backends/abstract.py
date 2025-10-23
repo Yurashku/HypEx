@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Iterable, Literal, Sequence, Sized
+from typing import Any, Callable, Dict, Iterable, Literal, Sequence, Sized, Optional
 
 from ...utils import AbstractMethodError, FromDictTypes
 
@@ -199,9 +199,9 @@ class DatasetBackendNavigation(ABC):
     @abstractmethod
     def add_column(
         self,
-        data: Sequence,
-        name: str,
-        index: Sequence | None = None,
+        data,
+        name: Optional[str] = None,
+        index: Optional[Sequence] = None,
     ):
         raise AbstractMethodError
 

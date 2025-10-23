@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Literal, Sequence, Sized
+from typing import Any, Callable, Dict, Iterable, Literal, Sequence, Sized, Union
 
 import numpy as np
 import pandas as pd  # type: ignore
@@ -226,7 +226,7 @@ class PandasNavigation(DatasetBackendNavigation):
     def add_column(
         self,
         data: Sequence,
-        name: str | list[str],
+        name: Union[str, list[str]] = None,
         index: Sequence | None = None,
     ):
         if isinstance(name, list) and len(name) == 1:

@@ -20,7 +20,7 @@ import pandas as pd
 import pyspark.sql as spark
 from pyspark import SparkContext, SparkConf, StorageLevel
 from pyspark.sql import SparkSession, functions as F, types as T
-
+from pyspark.sql.functions import lit, monotonically_increasing_id
 
 from ...utils import FromDictTypes, MergeOnError, ScalarType
 from .abstract import DatasetBackendCalc, DatasetBackendNavigation
@@ -291,13 +291,35 @@ class SparkNavigation(DatasetBackendNavigation):
             self.data = self.astype(dtype)
         return self
 
-    def add_column(
-        self,
-        data: Sequence,
-        name: Union[str, list[str]],
-        index: Optional[Sequence] = None,
-    ):
-        pass
+    def add_column(self, data: Union[spark.DataFrame, List], name: Optional[str] = None, index = None) -> spark.DataFrame:
+        def _add_columns_from_dataframe(df: spark.DataFrame, new_df: spark.DataFrame) -> spark.DataFrame:
+            if df.count() != new_df.count():
+                raise ValueError(
+                    f"Row count mismatch: original DF has {df.count()} rows, new DF has {new_df.count()} rows")
+
+            df_with_index = df.withColumn("__join_id", monotonically_increasing_id())
+            new_df_with_index = new_df.withColumn("__join_id", monotonically_increasing_id())
+
+            result = df_with_index.join(new_df_with_index, "__join_id", "inner")
+
+            return result.drop("__join_id")
+
+        def _add_columns_from_list(df: spark.DataFrame, data_list: List, column_names: str) -> spark.DataFrame:
+            if len(data_list) != df.count():
+                raise ValueError(f"Data length {len(data_list)} doesn't match DataFrame row count {df.count()}")
+
+            original_rdd = df.rdd
+            zipped_rdd = original_rdd.zip(spark.sparkContext.parallelize(data_list))
+            new_df = zipped_rdd.map(lambda x: x[0] + (x[1],)).toDF(df.columns + [column_names])
+
+            return new_df
+
+        if isinstance(data, spark.DataFrame):
+            return _add_columns_from_dataframe(self.data, data)
+        elif isinstance(data, list):
+            return _add_columns_from_list(self.data, data, name)
+        else:
+            raise ValueError("new_data must be Spark DataFrame, list of values, or list of lists")
 
     def append(
         self, other, reset_index: bool = False, axis: int = 0
