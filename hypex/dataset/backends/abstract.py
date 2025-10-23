@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Iterable, Literal, Sequence, Sized
+from typing import Any, Callable, Dict, Iterable, Literal, Sequence, Sized
 
 from ...utils import AbstractMethodError, FromDictTypes
 
@@ -188,12 +188,12 @@ class DatasetBackendNavigation(ABC):
 
     @abstractmethod
     def astype(
-        self, dtype: dict[str, type], errors: Literal["raise", "ignore"] = "raise"
+        self, dtype: Dict[str, type], errors: Literal["raise", "ignore"] = "raise"
     ) -> Any:
         raise AbstractMethodError
 
     @abstractmethod
-    def update_column_type(self, column_name: str, type_name: type):
+    def update_column_type(self, dtype: Dict[str, type]):
         raise AbstractMethodError
 
     @abstractmethod

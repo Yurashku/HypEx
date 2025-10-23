@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal, Sequence, Sized
+from typing import Any, Callable, Dict, Iterable, Literal, Sequence, Sized
 
 import numpy as np
 import pandas as pd  # type: ignore
@@ -185,10 +185,10 @@ class PandasNavigation(DatasetBackendNavigation):
         )[0]
 
     def get_column_type(
-        self, column_name: Union[List[str], str]
+        self, column_name: Union[Iterable[str], str]
     ) -> Optional[Union[Dict[str, type], type]]:
         dtypes = {}
-        for k, v in self.data.dtypes[column_name]:
+        for k, v in self.data[column_name].dtypes.items():
             if pd.api.types.is_integer_dtype(v):
                 dtypes[k] = int
             elif pd.api.types.is_float_dtype(v):
@@ -205,7 +205,7 @@ class PandasNavigation(DatasetBackendNavigation):
                 dtypes[k] = str
             elif pd.api.types.is_bool_dtype(v):
                 dtypes[k] = bool
-        if isinstance(column_name, list):
+        if isinstance(column_name, Iterable):
             return dtypes
         else:
             if column_name in dtypes:
@@ -213,13 +213,14 @@ class PandasNavigation(DatasetBackendNavigation):
         return None
 
     def astype(
-        self, dtype: dict[str, type], errors: Literal["raise", "ignore"] = "raise"
+        self, dtype: Dict[str, type], errors: Literal["raise", "ignore"] = "raise"
     ) -> pd.DataFrame:
         return self.data.astype(dtype=dtype, errors=errors)
 
-    def update_column_type(self, column_name: str, type_name: type):
-        if not self.data[column_name].isna().any():
-            self.data = self.data.astype({column_name: type_name})
+    def update_column_type(self, dtype: Dict[str, type]):
+        for column_name, type_name in dtype.items():
+            if not self.data[column_name].isna().any():
+                self.data = self.astype({column_name: type_name})
         return self
 
     def add_column(

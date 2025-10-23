@@ -282,12 +282,14 @@ class SparkNavigation(DatasetBackendNavigation):
         return None
 
     def astype(
-        self, dtype: dict[str, type], errors: Literal["raise", "ignore"] = "raise"
+        self, dtype: Dict[str, type], errors: Literal["raise", "ignore"] = "raise"
     ) -> spark.DataFrame:
-        pass
+        return self.data.astype(dtype)
 
-    def update_column_type(self, column_name: str, type_name: type):
-        pass
+    def update_column_type(self, dtype: Dict[str, type]):
+        if len(dtype) > 0:
+            self.data = self.astype(dtype)
+        return self
 
     def add_column(
         self,
