@@ -73,11 +73,25 @@ class ABOutput(Output):
             for key in cupac_report_keys:
                 report = experiment_data.analysis_tables[key]
                 target_name = key.replace('_cupac_report', '')
+                
+                control_mean_bias = None
+                test_mean_bias = None
+                
+                resume_data = self.resume.data
+                original_row = resume_data[resume_data['feature'] == target_name]
+                cupac_row = resume_data[resume_data['feature'] == f"{target_name}_cupac"]
+                
+                if not original_row.empty and not cupac_row.empty:
+                    control_mean_bias = original_row['control mean'].iloc[0] - cupac_row['control mean'].iloc[0]
+                    test_mean_bias = original_row['test mean'].iloc[0] - cupac_row['test mean'].iloc[0]
+                
                 variance_data.append({
                     'target': target_name,
                     'best_model': report.get('cupac_best_model'),
                     'variance_reduction_cv': report.get('cupac_variance_reduction_cv'),
-                    'variance_reduction_real': report.get('cupac_variance_reduction_real')
+                    'variance_reduction_real': report.get('cupac_variance_reduction_real'),
+                    'control_mean_bias': control_mean_bias,
+                    'test_mean_bias': test_mean_bias
                 })
             
             self.variance_reductions = Dataset.from_dict(
@@ -86,7 +100,9 @@ class ABOutput(Output):
                     'target': InfoRole(str),
                     'best_model': InfoRole(str),
                     'variance_reduction_cv': StatisticRole(),
-                    'variance_reduction_real': StatisticRole()
+                    'variance_reduction_real': StatisticRole(),
+                    'control_mean_bias': StatisticRole(),
+                    'test_mean_bias': StatisticRole()
                 }
             )
         else:
@@ -100,8 +116,8 @@ class ABOutput(Output):
         return "No experiment data available."
 
     def extract(self, experiment_data: ExperimentData):
-        super().extract(experiment_data)
+        super().extract(experiment_data)  # This creates self.resume
         self._extract_differences(experiment_data)
         self._extract_multitest_result(experiment_data)
         self._extract_sizes(experiment_data)
-        self._extract_variance_reductions(experiment_data)
+        self._extract_variance_reductions(experiment_data)  # Now can use self.resume

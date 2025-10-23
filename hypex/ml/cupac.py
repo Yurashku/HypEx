@@ -200,7 +200,10 @@ class CUPACExecutor(MLExecutor):
                     cupac_data[target]['X_predict']
                 )
                 prediction = self.predict(self.fitted_models[best_model], X_predict)
-                target_cupac = data.ds[target].mean() + (data.ds[target] - prediction)
+
+                explained_variation = prediction - prediction.mean()
+                target_cupac = data.ds[target] - explained_variation
+                
                 target_cupac = target_cupac.rename({target: f"{target}_cupac"})
                 data._data = data.ds.add_column(
                     data=target_cupac,
