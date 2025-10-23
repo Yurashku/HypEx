@@ -83,8 +83,8 @@ class CupacExtension(MLExtension):
     @staticmethod
     def _calculate_variance_reduction(y_original, y_adjusted):
         """Calculate variance reduction between original and adjusted target."""
-        var_original = np.var(y_original)
-        var_adjusted = np.var(y_adjusted)
+        var_original = y_original.var()
+        var_adjusted = y_adjusted.var()
         if var_original < 1e-10:
             return 0.0
         return float(max(0, (1 - var_adjusted / var_original) * 100))

@@ -2,7 +2,7 @@ from typing import Any, Optional
 import numpy as np
 from copy import deepcopy
 from ..dataset.dataset import Dataset, ExperimentData
-from ..dataset.roles import TargetRole, StatisticRole, FeatureRole, AdditionalTargetRole
+from ..dataset.roles import TargetRole, PreTargetRole, StatisticRole, FeatureRole, AdditionalTargetRole
 from ..executor import MLExecutor
 from ..utils import ExperimentDataEnum
 from ..utils.enums import BackendsEnum
@@ -49,7 +49,11 @@ class CUPACExecutor(MLExecutor):
 
         def agg_temporal_fields(role, data):
             fields = {}
-            searched_fields = data.field_search(role, search_types=[int, float])
+            if isinstance(role, TargetRole):
+                searched_fields = data.field_search([TargetRole(), PreTargetRole()], search_types=[int, float])
+            else:
+                searched_fields = data.field_search(role, search_types=[int, float])
+            
             searched_lags = [(field, data.ds.roles[field].lag if data.ds.roles[field].lag is not None else 0) for field in searched_fields]
             sorted_fields_by_lag = sorted(searched_lags, key=lambda x: x[1])
             for field, lag in sorted_fields_by_lag:
@@ -188,6 +192,8 @@ class CUPACExecutor(MLExecutor):
             if best_model is None:
                 raise RuntimeError(f"No models were successfully fitted for target '{target}'. All models failed during training.")
 
+            cupac_variance_reduction_real = None
+
             if 'X_predict' in cupac_data[target]:
                 X_predict = CUPACExecutor._agg_data_from_cupac_data(
                     data,
@@ -196,12 +202,17 @@ class CUPACExecutor(MLExecutor):
                 prediction = self.predict(self.fitted_models[best_model], X_predict)
                 target_cupac = data.ds[target].mean() + (data.ds[target] - prediction)
                 target_cupac = target_cupac.rename({target: f"{target}_cupac"})
-                data.additional_fields = data.additional_fields.add_column(
+                data._data = data.ds.add_column(
                     data=target_cupac,
-                    role={f"{target}_cupac": AdditionalTargetRole()}
+                    role={f"{target}_cupac": TargetRole()}
                 )
-            
-            # data.analysis_tables[f"{target}_best_model"] = best_model
-            # data.analysis_tables[f"{target}_variance_reduction"] = best_var_red
+                cupac_variance_reduction_real = self.extension._calculate_variance_reduction(data.ds[target], target_cupac)
+
+            report = {
+                "cupac_best_model": best_model,
+                "cupac_variance_reduction_cv": best_var_red,
+                "cupac_variance_reduction_real": cupac_variance_reduction_real,
+            }
+            data.analysis_tables[f"{target}_cupac_report"] = report
 
         return data

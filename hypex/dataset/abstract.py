@@ -9,7 +9,7 @@ import pandas as pd  # type: ignore
 
 from ..utils import BackendsEnum, RoleColumnError
 from .backends import PandasDataset
-from .roles import ABCRole, DefaultRole, default_roles
+from .roles import ABCRole, DefaultRole, PreTargetRole, TargetRole, default_roles
 
 
 def parse_roles(roles: dict) -> dict[str | int] | ABCRole:
@@ -39,11 +39,32 @@ class DatasetBase(ABC):
         raise TypeError("Backend must be an instance of BackendsEnum")
 
     def _set_all_roles(self, roles):
+        # Transform TargetRole with lag to PreTargetRole
+        roles = self._transform_target_roles_with_lag(roles)
+        
         keys = list(roles.keys())
         for column in self.columns:
             if column not in keys:
                 roles[column] = copy.deepcopy(self.default_role) or DefaultRole()
         return roles
+
+    def _transform_target_roles_with_lag(self, roles: dict[str, ABCRole]) -> dict[str, ABCRole]:
+        """Transform TargetRole with lag != None and lag != 0 to PreTargetRole."""
+        transformed_roles = {}
+        for column, role in roles.items():
+            if (isinstance(role, TargetRole) and 
+                not isinstance(role, PreTargetRole) and
+                role.lag is not None and 
+                role.lag != 0):
+                transformed_roles[column] = PreTargetRole(
+                    data_type=role.data_type,
+                    parent=role.parent,
+                    lag=role.lag,
+                    cofounders=role.cofounders
+                )
+            else:
+                transformed_roles[column] = role
+        return transformed_roles
 
     def _set_empty_types(self, roles):
         for column, role in roles.items():

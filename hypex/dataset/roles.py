@@ -91,11 +91,16 @@ class FeatureRole(TemporalRole):
         super().__init__(data_type=data_type, parent=parent, lag=lag)
 
 
-class PreTargetRole(ABCRole):
+class PreTargetRole(TargetRole):
     _role_name: RoleNameType = "PreTarget"
 
-    def __init__(self, data_type: TargetRoleTypes | None = None):
-        super().__init__(data_type)
+    def __init__(self,
+        data_type: TargetRoleTypes | None = None,
+        parent: str | None = None,
+        lag: int | None = None,
+        cofounders: list[str] | None = None,
+        ):
+        super().__init__(data_type=data_type, parent=parent, lag=lag, cofounders=cofounders)
 
 
 class StatisticRole(ABCRole):

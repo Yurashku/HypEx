@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from .analyzers.ab import ABAnalyzer
 from .comparators import Chi2Test, GroupDifference, GroupSizes, TTest, UTest
-from .dataset import TargetRole, TreatmentRole
+from .dataset import TargetRole, TreatmentRole, AdditionalTargetRole
 from .executor.executor import Executor
 from .experiments.base import Experiment, OnRoleExperiment
 from .ui.ab import ABOutput
@@ -102,7 +102,7 @@ class ABTest(ExperimentShell):
             from .ml import CUPACExecutor
             executors.insert(0, CUPACExecutor(cupac_models=cupac_models))
 
-        return Experiment(executors=executors)
+        return Experiment(executors=executors, transformer= True if enable_cupac else False)
 
     def __init__(
         self,
