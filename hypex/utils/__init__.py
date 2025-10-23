@@ -38,6 +38,7 @@ from .typings import (
                         SetParamsDictTypes,
                         StratificationRoleTypes,
                         TargetRoleTypes,
+                        SourceDataTypes,
 )
 
 __all__ = [
@@ -56,6 +57,7 @@ __all__ = [
     "DataTypeError",
     "DecoratedType",
     "DefaultRoleTypes",
+    "SourceDataTypes",
     "DocstringInheritDecorator",
     "ExperimentDataEnum",
     "FromDictTypes",

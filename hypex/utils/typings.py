@@ -11,6 +11,9 @@ from typing import (
     Union,
 )
 
+import pandas as pd
+import pyspark.sql as spark
+
 if TYPE_CHECKING:
     from hypex.dataset import Dataset
 
@@ -20,6 +23,7 @@ TargetRoleTypes = Union[float, int, bool]
 CategoricalTypes = Union[str]
 ScalarType = Union[float, int, str, bool]
 GroupingDataType = Tuple[List[Tuple[str, "Dataset"]], List[Tuple[str, "Dataset"]]]
+SourceDataTypes = Union[pd.DataFrame, spark.DataFrame]
 
 
 MultiFieldKeyTypes = Union[str, Sequence[str]]

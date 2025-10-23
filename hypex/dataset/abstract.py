@@ -8,7 +8,7 @@ from typing import Any, Iterable, Union, Optional
 import pandas as pd  # type: ignore
 import pyspark.sql as spark
 
-from ..utils import BackendsEnum, RoleColumnError
+from ..utils import BackendsEnum, RoleColumnError, SourceDataTypes
 from .backends import PandasDataset, SparkDataset
 from .roles import ABCRole, DefaultRole, default_roles
 
@@ -75,9 +75,13 @@ class DatasetBase(ABC):
         session: Optional[spark.SparkSession] = None,
     ):
         self._backend = (
-            self._select_backend_from_str(data, backend, session)
-            if isinstance(data, str)
-            else self._select_backend_from_data(data, session)
+            self._select_backend_from_data(data, session)
+            if any(
+                isinstance(data, source_data_type)
+                for source_data_type in SourceDataTypes.__args__
+            )
+            or isinstance(data, DatasetBase)
+            else self._select_backend_from_str(data, backend, session)
         )
         self.default_role = default_role
         if roles is None and data.hasattr("roles") and data.roles is not None:
