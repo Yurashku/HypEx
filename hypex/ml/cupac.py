@@ -68,8 +68,8 @@ class CUPACExecutor(MLExecutor):
             return fields
 
         def agg_train_predict_x(mode, lag):
-            for i in range(len(data.ds.roles[target].cofounders)):
-                feature = data.ds.roles[target].cofounders[i]
+            for i in range(len(cofounders[target])):
+                feature = cofounders[target][i]
                 if lag in [1, max_lags[target]]:
                     cupac_data[target][mode].append([features[feature][lag]])
                 else:
@@ -82,11 +82,22 @@ class CUPACExecutor(MLExecutor):
         targets = agg_temporal_fields(TargetRole(), data)
         features = agg_temporal_fields(FeatureRole(), data)
         
+        cofounders = {}
+        for target in targets:
+            if target in data.ds.columns:
+                cofounders[target] = data.ds.roles[target].cofounders
+            else:
+                min_lag = min(targets[target].keys())
+                cofounders[target] = data.ds.roles[targets[target][min_lag]].cofounders
+
+                if cofounders[target] is None:
+                    raise ValueError(f"Cofounders must be defined in the first lag for virtual target '{target}'")                    
+
         max_lags = {}
         for target, lags in targets.items():
             if lags:
                 max_lag = max(lags.keys())
-                for feature in data.ds.roles[target].cofounders:
+                for feature in cofounders[target]:
                     if feature in features and features[feature]:
                         max_lag = max(max(features[feature].keys()), max_lag)
             max_lags[target] = max_lag
@@ -102,7 +113,8 @@ class CUPACExecutor(MLExecutor):
 
             for lag in range(max_lags[target], 0, -1):
                 if lag == 1:
-                    agg_train_predict_x('X_predict', lag)
+                    if 'X_predict' in cupac_data[target].keys():
+                        agg_train_predict_x('X_predict', lag)
                 else:
                     agg_train_predict_x('X_train', lag)
                     cupac_data[target]['Y_train'].append(targets[target][lag - 1])
@@ -203,7 +215,7 @@ class CUPACExecutor(MLExecutor):
 
                 explained_variation = prediction - prediction.mean()
                 target_cupac = data.ds[target] - explained_variation
-                
+
                 target_cupac = target_cupac.rename({target: f"{target}_cupac"})
                 data._data = data.ds.add_column(
                     data=target_cupac,
