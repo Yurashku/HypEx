@@ -78,13 +78,13 @@ class ABOutput(Output):
                 test_mean_bias = None
                 
                 resume_data = self.resume.data
-                original_row = resume_data[resume_data['feature'] == target_name]
-                cupac_row = resume_data[resume_data['feature'] == f"{target_name}_cupac"]
-                
-                if not original_row.empty and not cupac_row.empty:
+                if 'feature' in resume_data.columns and target_name in resume_data['feature'].values:
+                    original_row = resume_data[resume_data['feature'] == target_name]
+                    cupac_row = resume_data[resume_data['feature'] == f"{target_name}_cupac"]
+
                     control_mean_bias = original_row['control mean'].iloc[0] - cupac_row['control mean'].iloc[0]
                     test_mean_bias = original_row['test mean'].iloc[0] - cupac_row['test mean'].iloc[0]
-                
+
                 variance_data.append({
                     'target': target_name,
                     'best_model': report.get('cupac_best_model'),
@@ -116,8 +116,8 @@ class ABOutput(Output):
         return "No experiment data available."
 
     def extract(self, experiment_data: ExperimentData):
-        super().extract(experiment_data)  # This creates self.resume
+        super().extract(experiment_data)
         self._extract_differences(experiment_data)
         self._extract_multitest_result(experiment_data)
         self._extract_sizes(experiment_data)
-        self._extract_variance_reductions(experiment_data)  # Now can use self.resume
+        self._extract_variance_reductions(experiment_data)
