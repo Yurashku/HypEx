@@ -354,7 +354,25 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
 
     @staticmethod
     def _convert_agg_result(result):
-        pass
+        if isinstance(result, pd.DataFrame):
+            if result.empty:
+                return result
+            if result.shape[0] == 1 and result.shape[1] == 1:
+                value = result.iat[0, 0]
+                return float(value) if value is not None else float("nan")
+            return result
+        if isinstance(result, spark.DataFrame):
+            columns = result.columns
+            if len(columns) == 0:
+                return result
+            if len(columns) == 1:
+                first_row = result.select(columns[0]).head(1)
+                if not first_row:
+                    return float("nan")
+                value = first_row[0][0]
+                return float(value) if value is not None else float("nan")
+            return result
+        return result
 
     def get_values(
         self,
@@ -407,7 +425,48 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
         pass
 
     def mean(self) -> Union[spark.DataFrame, float]:
-        pass
+        if self.data is None:
+            return float("nan")
+
+        numeric_types = {
+            "byte",
+            "short",
+            "int",
+            "bigint",
+            "long",
+            "float",
+            "double",
+            "tinyint",
+            "smallint",
+        }
+
+        numeric_columns: List[str] = []
+        for name, dtype in self.data.dtypes:
+            dtype_lower = dtype.lower()
+            if (
+                dtype_lower in numeric_types
+                or dtype_lower.startswith("decimal")
+                or dtype_lower == "boolean"
+            ):
+                numeric_columns.append(name)
+
+        if not numeric_columns:
+            empty_schema = T.StructType([])
+            return self.session.createDataFrame(
+                self.session.sparkContext.emptyRDD(), empty_schema
+            )
+
+        agg_expressions = [F.avg(F.col(column)).alias(column) for column in numeric_columns]
+        aggregated = self.data.select(*numeric_columns).agg(*agg_expressions)
+
+        if len(numeric_columns) == 1:
+            value_row = aggregated.select(numeric_columns[0]).head(1)
+            if not value_row:
+                return float("nan")
+            value = value_row[0][0]
+            return float(value) if value is not None else float("nan")
+
+        return aggregated.select(*numeric_columns)
 
     def mode(
         self, numeric_only: bool = False, dropna: bool = True

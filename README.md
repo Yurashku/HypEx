@@ -60,6 +60,8 @@ Diff-in-Diff) and CUPED methods, to rigorously test hypotheses and validate expe
 - **Stratification support**: Stratify groups for nuanced analysis
 - **Weights support**:  Empower your analysis by assigning custom weights to features, enhancing the matching precision
   to suit your specific research needs
+- **PySpark backend optimizations**: Leverages native Spark aggregations to keep large-scale statistics such as `mean()` fully
+  distributed while automatically pruning non-numeric columns for faster runtimes.
 
 ## Warnings
 
