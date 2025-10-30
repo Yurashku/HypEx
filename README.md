@@ -62,6 +62,8 @@ Diff-in-Diff) and CUPED methods, to rigorously test hypotheses and validate expe
   to suit your specific research needs
 - **PySpark backend optimizations**: Leverages native Spark aggregations to keep large-scale statistics such as `mean()` fully
   distributed while automatically pruning non-numeric columns for faster runtimes.
+- **PySpark analytics coverage**: Adds distributed implementations for descriptive statistics, missing-value utilities, sampling,
+  joins, and type filtering with sensible fallbacks for niche row-level operations.
 
 ## Warnings
 
@@ -70,6 +72,16 @@ design. Below, we will discuss features that are implemented in HypEx but do not
 
 **Note:** For Matching, it's recommended not to use more than 7 features as it might result in the curse of
 dimensionality, making the results unrepresentative.
+
+### PySpark backend usage notes
+
+- Operations that aggregate or summarise data (`sum`, `count`, `max`, `std`, `value_counts`, and more) now execute with
+  native Spark SQL expressions to avoid collecting large datasets on the driver.
+- Row-oriented utilities (`loc`, `iloc`, `to_dict`, `transpose`, etc.) intentionally fall back to pandas when a
+  distributed equivalent is not available. These conversions are limited to the requested slice but still move data to
+  the driver—avoid them on very large selections.
+- Merge operations support single-key joins (or index alignment) and raise explicit errors when unsupported options such
+  as custom suffixes or multi-key joins are requested, making limitations obvious during development.
 
 ## Installation
 
