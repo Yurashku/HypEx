@@ -135,6 +135,7 @@ class AATest(ExperimentShell):
         random_states: Iterable[int] | None = None,
         sample_size: float | None = None,
         additional_params: dict[str, Any] | None = None,
+        groups_sizes: list[float] | None = None,
     ) -> dict[type, dict[str, Any]]:
         """Prepares parameters for the A/A test experiment.
 
@@ -176,6 +177,7 @@ class AATest(ExperimentShell):
                 "random_state": random_states,
                 "control_size": [control_size],
                 "sample_size": [sample_size],
+                "groups_sizes": [groups_sizes],
             },
             Comparator: {
                 "grouping_role": [AdditionalTreatmentRole()],
@@ -196,6 +198,7 @@ class AATest(ExperimentShell):
         additional_params: dict[str, Any] | None = None,
         random_states: Iterable[int] | None = None,
         t_test_equal_var: bool | None = None,
+        groups_sizes: list[float] | None = None,
     ):
         if n_iterations is None:
             if precision_mode:
@@ -213,6 +216,7 @@ class AATest(ExperimentShell):
                     random_states,
                     sample_size,
                     additional_params,
+                    groups_sizes,
                 ),
                 reporter=DatasetReporter(OneAADictReporter(front=False)),
             )
@@ -234,6 +238,7 @@ class AATest(ExperimentShell):
                         control_size,
                         random_states,
                         additional_params,
+                        groups_sizes,
                     ),
                     reporter=DatasetReporter(OneAADictReporter(front=False)),
                     stopping_criterion=IfAAExecutor(sample_size=sample_size),
@@ -248,4 +253,6 @@ class AATest(ExperimentShell):
             output=AAOutput(),
         )
         if t_test_equal_var is not None:
-            self.experiment.set_params({TTest: {"calc_kwargs": {"equal_var": t_test_equal_var}}})
+            self.experiment.set_params(
+                {TTest: {"calc_kwargs": {"equal_var": t_test_equal_var}}}
+            )

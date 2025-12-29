@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from warnings import warn
 
 from ..comparators.distances import MahalanobisDistance
 from ..dataset import (
@@ -31,8 +32,23 @@ class FaissNearestNeighbors(MLExecutor):
         self.test_pairs = test_pairs
         self.faiss_mode = faiss_mode
         super().__init__(
-            grouping_role=grouping_role, target_role=FeatureRole(), key=key
+            grouping_role=grouping_role,
+            target_role=FeatureRole(),
+            key=key,
         )
+
+    @classmethod
+    def _set_global_match_indexes(
+        cls, local_indexes: Dataset, data: tuple(str, Dataset)
+    ) -> list[int, list[int]]:
+        if len(local_indexes) == 0:
+            return local_indexes
+        global_indexes = local_indexes
+        for col in local_indexes.columns:
+            global_indexes[col] = data[1].index.take(
+                local_indexes.get_values(column=col)
+            )
+        return global_indexes
 
     @classmethod
     def _execute_inner_function(
@@ -46,24 +62,27 @@ class FaissNearestNeighbors(MLExecutor):
         **kwargs,
     ) -> dict:
         if test_pairs is not True:
-            data = cls._inner_function(
+            test_data = cls._inner_function(
                 data=grouping_data[0][1],
                 test_data=grouping_data[1][1],
                 n_neighbors=n_neighbors or 1,
                 faiss_mode=faiss_mode,
                 **kwargs,
             )
+            test_data = cls._set_global_match_indexes(test_data, grouping_data[0])
             if two_sides is not True:
-                return {"test": data}
+                return {"test": test_data}
+            control_data = cls._inner_function(
+                data=grouping_data[1][1],
+                test_data=grouping_data[0][1],
+                n_neighbors=n_neighbors or 1,
+                faiss_mode=faiss_mode,
+                **kwargs,
+            )
+            control_data = cls._set_global_match_indexes(control_data, grouping_data[1])
             return {
-                "test": data,
-                "control": cls._inner_function(
-                    data=grouping_data[1][1],
-                    test_data=grouping_data[0][1],
-                    n_neighbors=n_neighbors or 1,
-                    faiss_mode=faiss_mode,
-                    **kwargs,
-                ),
+                "test": test_data,
+                "control": control_data,
             }
         data = cls._inner_function(
             data=grouping_data[1][1],
@@ -126,30 +145,43 @@ class FaissNearestNeighbors(MLExecutor):
             two_sides=self.two_sides,
             test_pairs=self.test_pairs,
         )
-        ds = data.ds.groupby(group_field)
+        nans = 0
+
+        for result in compare_result.values():
+            nans += (
+                sum(result.isna().sum().get_values(row="sum"))
+                if self.n_neighbors > 1
+                else result.isna().sum()
+            )
+            result = result.fillna(-1).astype({col: int for col in result.columns})
+        if nans > 0:
+            warn(
+                f"Faiss returned {nans} nans, which were replaced with dummy matches. Check if the data is suitable for the test.",
+                UserWarning,
+            )
         matched_indexes = Dataset.create_empty()
-        for i in range(len(compare_result.columns)):
-            group = (
-                grouping_data[1][1]
-                if compare_result.columns[i] == "test"
-                else grouping_data[0][1]
+        for res_k, res_v in compare_result.items():
+            group = grouping_data[1][1] if res_k == "test" else grouping_data[0][1]
+            t_index_field = res_v.loc[: len(group) - 1]
+            n_nans = (
+                t_index_field.isna().sum().get_values(row="sum")
+                if t_index_field.shape[1] > 1
+                else [t_index_field.isna().sum()]
             )
-            t_ds = ds[0][1] if compare_result.columns[i] == "test" else ds[1][1]
-            t_index_field = (
-                compare_result[compare_result.columns[i]]
-                .loc[: len(group) - 1]
-                .rename({compare_result.columns[i]: "indexes"})
-            )
-            if t_index_field.isna().sum() > 0:
+            if any(n_nans):
                 raise PairsNotFoundError
+            t_index_field = t_index_field.rename(
+                {col: f"indexes_{i}" for i, col in enumerate(t_index_field.columns)}
+            )
             matched_indexes = matched_indexes.append(
                 Dataset.from_dict(
                     data={
-                        "indexes": t_ds.iloc[
-                            list(map(lambda x: int(x[0]), t_index_field.get_values()))
-                        ].index
+                        col: t_index_field.get_values(column=col)
+                        for col in t_index_field.columns
                     },
-                    roles={"indexes": AdditionalMatchingRole()},
+                    roles={
+                        col: AdditionalMatchingRole() for col in t_index_field.columns
+                    },
                     index=group.index,
                 )
             ).sort()
@@ -157,4 +189,5 @@ class FaissNearestNeighbors(MLExecutor):
             matched_indexes = matched_indexes.reindex(data.ds.index, fill_value=-1)
         elif len(matched_indexes) < len(data.ds) and self.two_sides:
             raise PairsNotFoundError
+        matched_indexes.data.to_csv("matched_indexes.csv")
         return self._set_value(data, matched_indexes, key="matched")

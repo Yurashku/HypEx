@@ -5,7 +5,9 @@ from collections.abc import Iterable
 from copy import deepcopy
 from typing import Any, Callable, Hashable, Literal, Sequence
 
+import numpy as np
 import pandas as pd  # type: ignore
+from numpy import ndarray
 
 from ..utils import (
     ID_SPLIT_SYMBOL,
@@ -128,7 +130,7 @@ class Dataset(DatasetBase):
 
     def __setitem__(self, key: str, value: Any):
         if isinstance(value, Dataset):
-            value = value.data
+            value = value.data.iloc[:, 0]
         if key not in self.columns and isinstance(key, str):
             self.add_column(value, {key: InfoRole()})
             warnings.warn(
@@ -301,6 +303,26 @@ class Dataset(DatasetBase):
         role: ABCRole = StatisticRole()
         return Dataset(data=result, roles={column: role for column in result.columns})
 
+    def get(
+        self,
+        key,
+        default=None,
+    ) -> Dataset:
+        return Dataset(data=self._backend.get(key, default), roles=deepcopy(self.roles))
+
+    def take(
+        self,
+        indices: int | list[int],
+        axis: Literal["index", "columns", "rows"] | int = 0,
+    ) -> Dataset:
+        new_data = self._backend.take(indices=indices, axis=axis)
+        new_roles = (
+            {k: deepcopy(v) for k, v in self.roles.items() if k in new_data.columns}
+            if axis == 1
+            else deepcopy(self.roles)
+        )
+        return Dataset(data=new_data, roles=new_roles)
+
     def add_column(
         self,
         data,
@@ -379,6 +401,9 @@ class Dataset(DatasetBase):
         index=None,
     ) -> Dataset:
         ds = Dataset(roles=roles, backend=backend)
+        # if all([isinstance(v, Dataset) for v in data.values()]):
+        #     ds._backend = ds._backend.from_dict({k: v.data for k, v in data.items()}, data, index)
+        # else:
         ds._backend = ds._backend.from_dict(data, index)
         ds.data = ds._backend.data
         return ds
@@ -433,10 +458,12 @@ class Dataset(DatasetBase):
         by: Any,
         func: str | list | None = None,
         fields_list: str | list | None = None,
+        reset_index: bool = True,
         **kwargs,
     ) -> list[tuple[str, Dataset]]:
         if isinstance(by, Dataset) and len(by.columns) == 1:
-            self.data = self.data.reset_index(drop=True)
+            # if reset_index:
+            #     self.data = self.data.reset_index(drop=True)
             datasets = [
                 (group, Dataset(roles=self.roles, data=self.data.loc[group_data.index]))
                 for group, group_data in by._backend.groupby(by=by.columns[0], **kwargs)
@@ -642,13 +669,18 @@ class Dataset(DatasetBase):
         new_roles = {c: t_roles[c] for c in t_data.columns}
         return Dataset(roles=new_roles, data=t_data)
 
-    def drop(self, labels: Any = None, axis: int = 1):
+    def drop(
+        self,
+        labels: str | None = None,
+        axis: int | None = None,
+        columns: str | Iterable[str] | None = None,
+    ):
         # Convert Dataset labels to list of indices
         if isinstance(labels, Dataset):
             labels = list(labels.index)
 
         # Drop specified labels
-        t_data = self._backend.drop(labels=labels, axis=axis)
+        t_data = self._backend.drop(labels=labels, axis=axis, columns=columns)
 
         # Update roles based on axis
         t_roles = (
@@ -669,8 +701,13 @@ class Dataset(DatasetBase):
         t_roles = {c: self.roles[c] for c in t_data.columns if c in self.roles.keys()}
         return Dataset(roles=t_roles, data=t_data)
 
-    def dot(self, other: Dataset) -> Dataset:
-        return Dataset(roles=other.roles, data=self.backend.dot(other.backend))
+    def dot(self, other: Dataset | ndarray) -> Dataset:
+        return Dataset(
+            roles=deepcopy(other.roles) if isinstance(other, Dataset) else {},
+            data=self.backend.dot(
+                other.backend if isinstance(other, Dataset) else other
+            ),
+        )
 
     def transpose(
         self,
@@ -723,6 +760,16 @@ class Dataset(DatasetBase):
             data=self._backend.replace(to_replace=to_replace, value=value, regex=regex),
         )
 
+    def list_to_columns(self, column: str) -> Dataset:
+        if not pd.api.types.is_list_like(self.backend[column][0]):
+            return self
+        extended_data = self.backend.list_to_columns(column)
+        extended_roles = {
+            c: deepcopy(self.roles[column]) for c in extended_data.columns
+        }
+        extended_ds = Dataset(roles=extended_roles, data=extended_data)
+        return self.append(extended_ds, axis=1).drop(column, axis=1)
+
 
 class ExperimentData:
     def __init__(self, data: Dataset):
@@ -767,7 +814,21 @@ class ExperimentData:
     ) -> ExperimentData:
         # Handle additional fields
         if space == ExperimentDataEnum.additional_fields:
-            if not isinstance(value, Dataset) or len(value.columns) == 1:
+            if not isinstance(value, Dataset):
+                self.additional_fields = self.additional_fields.add_column(
+                    data=value, role={executor_id: role}
+                )
+            elif len(value.columns) == 1:
+                role = role[0] if isinstance(role, list) else role
+                role = next(iter(role.values())) if isinstance(role, dict) else role
+                executor_id = (
+                    executor_id[0] if isinstance(executor_id, list) else executor_id
+                )
+                executor_id = (
+                    next(iter(executor_id.keys()))
+                    if isinstance(executor_id, dict)
+                    else executor_id
+                )
                 self.additional_fields = self.additional_fields.add_column(
                     data=value, role={executor_id: role}
                 )
@@ -918,6 +979,8 @@ class ExperimentData:
                 searched_data = searched_data.add_column(
                     data=t_data, role={column: role}
                 )
+        if not searched_data.is_empty():
+            searched_data.index = self.ds.index
         return searched_data
 
 
@@ -938,6 +1001,8 @@ class DatasetAdapter(Adapter):
             if isinstance(roles, ABCRole):
                 raise InvalidArgumentError("roles", "dict[str, ABCRole]")
             return DatasetAdapter.list_to_dataset(data, roles)
+        elif isinstance(data, np.ndarray):
+            return DatasetAdapter.ndarray_to_dataset(data, roles)
         elif any(isinstance(data, t) for t in [str, int, float, bool]):
             return DatasetAdapter.value_to_dataset(data, roles)
         elif isinstance(data, Dataset):
@@ -975,12 +1040,23 @@ class DatasetAdapter(Adapter):
     @staticmethod
     def list_to_dataset(data: list, roles: dict[str, ABCRole]) -> Dataset:
         return Dataset(
-            roles=roles,
-            data=pd.DataFrame(data=data, columns=[next(iter(roles.keys()))]),
+            roles=roles if len(roles) > 0 else {0: DefaultRole()},
+            data=pd.DataFrame(
+                data=data, columns=[next(iter(roles.keys()))] if len(roles) > 0 else [0]
+            ),
         )
 
     @staticmethod
     def frame_to_dataset(data: pd.DataFrame, roles: dict[str, ABCRole]) -> Dataset:
+        return Dataset(
+            roles=roles,
+            data=data,
+        )
+
+    @staticmethod
+    def ndarray_to_dataset(data: np.ndarray, roles: dict[str, ABCRole]) -> Dataset:
+        columns = range(data.shape[1]) if len(roles) == 0 else list(roles.keys())
+        data = pd.DataFrame(data=data, columns=columns)
         return Dataset(
             roles=roles,
             data=data,

@@ -3,15 +3,17 @@ from __future__ import annotations
 from typing import Literal
 
 from .analyzers.matching import MatchingAnalyzer
-from .comparators import KSTest, TTest
+from .comparators import Chi2Test, KSTest, TTest
 from .comparators.distances import MahalanobisDistance
 from .dataset import AdditionalMatchingRole, FeatureRole, TargetRole, TreatmentRole
+from .encoders.encoders import DummyEncoder
 from .executor import Executor
 from .experiments import GroupExperiment
 from .experiments.base import Experiment, OnRoleExperiment
 from .ml.faiss import FaissNearestNeighbors
 from .operators.operators import Bias, MatchingMetrics
 from .reporters.matching import MatchingDatasetReporter
+from .transformers import TypeCaster
 from .ui.base import ExperimentShell
 from .ui.matching import MatchingOutput
 
@@ -70,11 +72,17 @@ class Matching(ExperimentShell):
         metric: Literal["atc", "att", "ate"] = "ate",
         bias_estimation: bool = True,
         quality_tests: (
-            Literal["smd", "psi", "ks-test", "repeats", "t-test", "auto"]
-            | list[Literal["smd", "psi", "ks-test", "repeats", "t-test", "auto"]]
+            Literal["smd", "psi", "ks-test", "repeats", "t-test", "chi2-test", "auto"]
+            | list[
+                Literal[
+                    "smd", "psi", "ks-test", "repeats", "t-test", "chi2-test", "auto"
+                ]
+            ]
         ) = "auto",
         faiss_mode: Literal["base", "fast", "auto"] = "auto",
         n_neighbors: int = 1,
+        weights: dict[str, float] | None = None,
+        encode_categories: bool = True,
     ) -> Experiment:
         """Creates an experiment configuration with specified matching parameters.
 
@@ -109,7 +117,10 @@ class Matching(ExperimentShell):
             )
         """
         distance_mapping = {
-            "mahalanobis": MahalanobisDistance(grouping_role=TreatmentRole())
+            "mahalanobis": MahalanobisDistance(
+                grouping_role=TreatmentRole(), weights=weights
+            ),
+            # "l2": L2Distance(grouping_role=TreatmentRole(), weights=weights),
         }
         test_mapping = {
             "t-test": TTest(
@@ -123,17 +134,26 @@ class Matching(ExperimentShell):
                 compare_by="matched_pairs",
                 baseline_role=AdditionalMatchingRole(),
             ),
+            "chi2-test": Chi2Test(
+                grouping_role=TreatmentRole(),
+                compare_by="matched_pairs",
+                baseline_role=AdditionalMatchingRole(),
+            ),
         }
         two_sides = metric == "ate"
         test_pairs = metric == "atc"
         executors: list[Executor] = [
+            TypeCaster(
+                dtype={int: float},
+                roles=[FeatureRole(), TargetRole()],
+            ),
             FaissNearestNeighbors(
                 grouping_role=TreatmentRole(),
                 two_sides=two_sides,
                 test_pairs=test_pairs,
                 faiss_mode=faiss_mode,
                 n_neighbors=n_neighbors,
-            )
+            ),
         ]
         if bias_estimation:
             executors += [
@@ -144,10 +164,18 @@ class Matching(ExperimentShell):
                 grouping_role=TreatmentRole(),
                 target_roles=[TargetRole()],
                 metric=metric,
+                n_neighbors=n_neighbors,
             ),
             MatchingAnalyzer(),
         ]
-        if quality_tests != "auto":
+        if quality_tests == "auto":
+            executors += [
+                OnRoleExperiment(
+                    executors=list(test_mapping.values()),
+                    role=FeatureRole(),
+                )
+            ]
+        else:
             # warnings.warn("Now quality tests aren't supported yet")
             executors += [
                 OnRoleExperiment(
@@ -155,21 +183,15 @@ class Matching(ExperimentShell):
                     role=FeatureRole(),
                 )
             ]
+        executors = (
+            executors if distance == "l2" else [distance_mapping[distance], *executors]
+        )
+        executors = executors if not encode_categories else [DummyEncoder(), *executors]
         return (
-            Experiment(
-                executors=(
-                    executors
-                    if distance == "l2"
-                    else [distance_mapping[distance], *executors]
-                )
-            )
+            Experiment(executors=executors)
             if not group_match
             else GroupExperiment(
-                executors=(
-                    executors
-                    if distance == "l2"
-                    else [distance_mapping[distance], *executors]
-                ),
+                executors=executors,
                 reporter=MatchingDatasetReporter(),
             )
         )
@@ -178,15 +200,22 @@ class Matching(ExperimentShell):
         self,
         group_match: bool = False,
         distance: Literal["mahalanobis", "l2"] = "mahalanobis",
-        metric: Literal["atc", "att", "ate"] = "ate",
+        # metric: Literal["atc", "att", "ate"] = "ate",
         bias_estimation: bool = True,
         quality_tests: (
-            Literal["smd", "psi", "ks-test", "repeats", "t-test", "auto"]
-            | list[Literal["smd", "psi", "ks-test", "repeats", "t-test", "auto"]]
+            Literal["smd", "psi", "ks-test", "repeats", "t-test", "chi2-test", "auto"]
+            | list[
+                Literal[
+                    "smd", "psi", "ks-test", "repeats", "t-test", "chi2-test", "auto"
+                ]
+            ]
         ) = "auto",
         faiss_mode: Literal["base", "fast", "auto"] = "auto",
         n_neighbors: int = 1,
+        weights: dict[str, float] | None = None,
+        encode_categories: bool = True,
     ):
+        metric = "ate"
         super().__init__(
             experiment=self._make_experiment(
                 group_match,
@@ -195,6 +224,9 @@ class Matching(ExperimentShell):
                 bias_estimation,
                 quality_tests,
                 faiss_mode,
+                n_neighbors,
+                weights,
+                encode_categories,
             ),
             output=MatchingOutput(GroupExperiment if group_match else MatchingAnalyzer),
         )

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from ..analyzers.matching import MatchingAnalyzer
-from ..comparators import KSTest, TTest
+from ..comparators import Chi2Test, KSTest, TTest
 from ..dataset import Dataset, ExperimentData
 from ..ml import FaissNearestNeighbors
 from ..reporters.abstract import DatasetReporter, DictReporter, TestDictReporter
@@ -38,16 +38,17 @@ class MatchingDictReporter(DictReporter):
 
     @staticmethod
     def _extract_from_additional_fields(data: ExperimentData):
-        indexes_id = data.get_one_id(
+        indexes_id = data.get_ids(
             FaissNearestNeighbors, ExperimentDataEnum.additional_fields
-        )
+        )[FaissNearestNeighbors.__name__][ExperimentDataEnum.additional_fields.value]
         return {
-            "indexes": MATCHING_INDEXES_SPLITTER_SYMBOL.join(
+            f"indexes{ID_SPLIT_SYMBOL}{column.split(ID_SPLIT_SYMBOL)[3]}": MATCHING_INDEXES_SPLITTER_SYMBOL.join(
                 str(i)
-                for i in data.additional_fields[indexes_id].to_dict()["data"]["data"][
-                    indexes_id
+                for i in data.additional_fields[column].to_dict()["data"]["data"][
+                    column
                 ]
             )
+            for column in indexes_id
         }
 
     def report(self, experiment_data: ExperimentData):
@@ -59,7 +60,7 @@ class MatchingDictReporter(DictReporter):
 
 
 class MatchingQualityDictReporter(TestDictReporter):
-    tests: ClassVar[list] = [TTest, KSTest]
+    tests: ClassVar[list] = [TTest, KSTest, Chi2Test]
 
     def report(self, data: ExperimentData) -> dict[str, Any]:
         return self.extract_tests(data)

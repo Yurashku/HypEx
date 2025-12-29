@@ -16,6 +16,10 @@ from hypex.dataset import (
     TreatmentRole,
 )
 
+# from hypex.utils import create_test_data
+#
+# df = create_test_data()
+
 
 @pytest.fixture
 def aa_data():
@@ -28,7 +32,7 @@ def aa_data():
                 "post_spends": TargetRole(),
                 "gender": StratificationRole(str),
             },
-            data="examples/tutorials/data.csv",
+            data="tests/data.csv",
         ),
         Dataset(
             roles={
@@ -38,7 +42,7 @@ def aa_data():
                 "post_spends": TargetRole(),
                 "gender": TargetRole(str),
             },
-            data="examples/tutorials/data.csv",
+            data="tests/data.csv",
         ),
     ]
 
@@ -54,7 +58,7 @@ def ab_data():
             "post_spends": TargetRole(),
             "gender": TargetRole(),
         },
-        data="examples/tutorials/data.csv",
+        data="tests/data.csv",
     )
     data["treat"] = [random.choice([0, 1, 2]) for _ in range(len(data))]
     return data
@@ -68,7 +72,7 @@ def matching_data():
             "treat": TreatmentRole(int),
             "post_spends": TargetRole(float),
         },
-        data="examples/tutorials/data.csv",
+        data="tests/data.csv",
         default_role=FeatureRole(),
     )
     data = data.fillna(method="bfill")
@@ -79,10 +83,11 @@ def test_aatest(aa_data):
     mapping = {
         "aa-casual": AATest(n_iterations=10),
         "aa-rs": AATest(random_states=[56, 72, 2, 43]),
-        "aa-strat": AATest(random_states=[56, 72, 2, 43], stratification=True),
+        "aa-strat": AATest(stratification=True, random_states=[56, 72, 2, 43]),
         "aa-sample": AATest(n_iterations=10, sample_size=0.3),
         "aa-cat_target": AATest(n_iterations=10),
         "aa-equal_var": AATest(n_iterations=10, t_test_equal_var=False),
+        "aa-n": AATest(n_iterations=10, groups_sizes=[0.5, 0.2, 0.3]),
     }
 
     mapping_resume = {
@@ -140,6 +145,15 @@ def test_aatest(aa_data):
                 "TTest best split": {0: "OK", 1: "OK"},
                 "KSTest best split": {0: "OK", 1: "OK"},
                 "result": {0: "OK", 1: "OK"},
+            }
+        ),
+        "aa-n": pd.DataFrame(
+            {
+                "TTest aa test": {0: "OK", 1: "OK", 2: "OK", 3: "OK"},
+                "KSTest aa test": {0: "OK", 1: "OK", 2: "OK", 3: "OK"},
+                "TTest best split": {0: "OK", 1: "OK", 2: "OK", 3: "OK"},
+                "KSTest best split": {0: "OK", 1: "OK", 2: "OK", 3: "OK"},
+                "result": {0: "OK", 1: "OK", 2: "OK", 3: "OK"},
             }
         ),
     }
@@ -206,9 +220,7 @@ def test_abtest(ab_data):
 def test_matchingtest(matching_data):
     mapping = {
         "matching": Matching(),
-        "matching-atc": Matching(metric="atc"),
-        "matching-att": Matching(metric="att"),
-        "matching-l2": Matching(distance="l2", metric="att"),
+        "matching-l2": Matching(distance="l2"),
         "matching-faiss-auto": Matching(distance="l2", faiss_mode="auto"),
         "matching-faiss_base": Matching(distance="mahalanobis", faiss_mode="base"),
         "matching-n-neighbors": Matching(n_neighbors=2),

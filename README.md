@@ -56,7 +56,7 @@ Diff-in-Diff) and CUPED methods, to rigorously test hypotheses and validate expe
 - **Data Tests**: Incorporates SMD, KS, PSI, and Repeats tests to affirm the robustness of effect estimations.
 - **Feature Selection**: Employs LGBM and Catboost feature selection to pinpoint the most impactful features for causal
   analysis.
-- **AB Testing Suite**: Features a suite of AB testing tools for comprehensive hypothesis evaluation.
+- **AB Testing Suite**: Features a suite of AB testing tools for comprehensive hypothesis evaluation, including CUPED and CUPAC variance reduction methods with detailed reports.
 - **Stratification support**: Stratify groups for nuanced analysis
 - **Weights support**:  Empower your analysis by assigning custom weights to features, enhancing the matching precision
   to suit your specific research needs
@@ -150,9 +150,12 @@ data = Dataset(
 test = ABTest()  # Classic A/B test
 test = ABTest(multitest_method="bonferroni")  # A/Bn test with Bonferroni corrections
 test = ABTest(additional_tests=['t-test', 'u-test', 'chi2-test'])  # Use can choose tests
+test = ABTest(cuped_features={'post_spends': 'pre_spends'})  # CUPED variance reduction
+test = ABTest(cupac_features={'post_spends': ['pre_spends', 'feature1']})  # CUPAC variance reduction
 
 result = test.execute(data)
 result.resume  # Resume of results
+result.variance_reduction_report  # Variance reduction report for CUPED/CUPAC
 ```
 More about A/B test [here](https://github.com/sb-ai-lab/HypEx/tree/master/examples/tutorials/ABTestTutorial.ipynb)
 

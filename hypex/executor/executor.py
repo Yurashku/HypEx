@@ -7,7 +7,6 @@ from ..dataset import (
     ABCRole,
     AdditionalMatchingRole,
     Dataset,
-    DatasetAdapter,
     ExperimentData,
     FeatureRole,
     GroupingRole,
@@ -206,13 +205,15 @@ class MLExecutor(Calculator, ABC):
     def _set_value(
         self, data: ExperimentData, value: Any, key: Any = None
     ) -> ExperimentData:
-        return data.set_value(
-            ExperimentDataEnum.additional_fields,
-            self.id,
-            value=value,
-            key=key,
-            role=AdditionalMatchingRole(),
-        )
+        for i in range(value.shape[1]):
+            data.set_value(
+                ExperimentDataEnum.additional_fields,
+                f"{self.id}{ID_SPLIT_SYMBOL}{i}",
+                value=value.iloc[:, i],
+                key=key,
+                role=AdditionalMatchingRole(),
+            )
+        return data
 
     @classmethod
     def calc(
@@ -235,10 +236,7 @@ class MLExecutor(Calculator, ABC):
         result = cls._execute_inner_function(
             grouping_data, target_field=target_field, **kwargs
         )
-        return DatasetAdapter.to_dataset(
-            result,
-            {i: AdditionalMatchingRole() for i in list(result.keys())},
-        )
+        return result
 
     def execute(self, data: ExperimentData) -> ExperimentData:
         group_field, target_fields = self._get_fields(data=data)
@@ -263,6 +261,7 @@ class MLExecutor(Calculator, ABC):
             target_fields=target_fields,
             features_fields=features_fields,
         )
+        # TODO: add roles to compare_result
         return self._set_value(data, compare_result)
 
 
