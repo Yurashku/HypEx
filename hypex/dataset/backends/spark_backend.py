@@ -298,16 +298,6 @@ class SparkNavigation(DatasetBackendNavigation):
         )
         return self.add_column(new_df)
 
-    def __truediv__(self, other) -> spark.DataFrame:
-        other = self.__magic_determine_other(other)
-        new_df = self.data.select(
-            (F.col(c) / other).alias(c) for c in self.data.columns
-        )
-        return self.add_column(new_df)
-
-    def __div__(self, other) -> spark.DataFrame:
-        return self.__truediv__(other)
-
     # Right arithmetic operators:
     def __radd__(self, other) -> spark.DataFrame:
         other = self.__magic_determine_other(other)
@@ -595,7 +585,24 @@ class SparkNavigation(DatasetBackendNavigation):
     def append(  # Эрик
         self, other, reset_index: bool = False, axis: int = 0
     ) -> spark.DataFrame:
-        pass
+        datasets = Adapter.to_list(other)
+        frames = [self.data]
+        for ds in datasets:
+            frames.append(ds.data if isinstance(ds, SparkDataset) else ds)
+
+        if axis == 0:
+            result = reduce(lambda left, right: left.unionByName(right, allowMissingColumns=True), frames)
+            return result if not reset_index else result
+        if axis == 1:
+            indexed = [
+                df.withColumn("__row_idx", F.monotonically_increasing_id())
+                for df in frames
+            ]
+            result = indexed[0]
+            for df in indexed[1:]:
+                result = result.join(df, on="__row_idx", how="inner")
+            return result.drop("__row_idx")
+        raise ValueError("axis must be 0 (rows) or 1 (columns)")
 
     def from_dict(
         self, data: FromDictTypes, index: Optional[Union[Iterable, Sized]] = None
@@ -620,16 +627,33 @@ class SparkNavigation(DatasetBackendNavigation):
         return self
 
     def to_dict(self) -> dict[str, Any]:  # TODO: to be moved to small data
-        pass
+        rows = self.data.collect()
+        data = {c: [] for c in self.data.columns}
+        for row in rows:
+            row_dict = row.asDict(recursive=True)
+            for c in self.data.columns:
+                data[c].append(row_dict.get(c))
+        return {"data": data, "index": list(range(len(rows)))}
 
     def to_records(self) -> list[dict]:  # TODO: to be moved to small data
-        pass
+        return [r.asDict(recursive=True) for r in self.data.collect()]
 
     def loc(self, items: Iterable) -> Iterable:  # TODO: to be moved to small data
-        pass
+        items = Adapter.to_list(items)
+        index_col = "_index" if "_index" in self.data.columns else None
+        if index_col is None:
+            indexed = self.data.withColumn(
+                "_index", F.row_number().over(Window.orderBy(F.monotonically_increasing_id())) - 1
+            )
+            return indexed.filter(F.col("_index").isin(items)).drop("_index")
+        return self.data.filter(F.col(index_col).isin(items))
 
     def iloc(self, items: Iterable) -> Iterable:  # TODO: to be moved to small data
-        pass
+        items = Adapter.to_list(items)
+        indexed = self.data.withColumn(
+            "_row_num", F.row_number().over(Window.orderBy(F.monotonically_increasing_id())) - 1
+        )
+        return indexed.filter(F.col("_row_num").isin(items)).drop("_row_num")
 
 
 class SparkDataset(SparkNavigation, DatasetBackendCalc):
@@ -1015,10 +1039,8 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
             return self.data.sparkSession.createDataFrame(result)
 
     def quantile(self, q: float = 0.5) -> float:
-        result = self.data.approxQuantile(self.data.columns[0], q=[q], accuracy=1e-6)[0]
-        if isinstance(q, list) and len(q) > 1:
-            return result
-        self.agg(func="quantile", q=q)
+        result = self.data.approxQuantile(self.data.columns[0], q=[q], relativeError=1e-6)
+        return result[0]
 
     def coefficient_of_variation(
         self, small_format=False
@@ -1039,10 +1061,12 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
     def sort_index(
         self, ascending: bool = True, **kwargs
     ) -> spark.DataFrame:  # Иван # TODO: to be moved to small data
-        pass
+        if "_index" in self.data.columns:
+            return self.data.orderBy(F.col("_index").asc() if ascending else F.col("_index").desc())
+        return self.data.orderBy(F.monotonically_increasing_id().asc() if ascending else F.monotonically_increasing_id().desc())
 
     def get_numeric_columns(self) -> list[str]:
-        return [col for col in self.data.columns if isinstance(col, PysparkScalarType)]
+        return [f.name for f in self.data.schema.fields if isinstance(f.dataType, NumericType)]
 
     def corr(
         self,
@@ -1086,7 +1110,9 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
     def sort_values(
         self, by: Union[str, list[str]], ascending: bool = True, **kwargs
     ) -> spark.DataFrame:
-        pass
+        by = Adapter.to_list(by)
+        order_expr = [F.col(c).asc() if ascending else F.col(c).desc() for c in by]
+        return self.data.orderBy(*order_expr)
 
     def value_counts(
         self,
@@ -1123,7 +1149,26 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
         method: Optional[Literal["bfill", "ffill"]] = None,
         **kwargs,
     ) -> spark.DataFrame:
-        pass
+        if method is not None:
+            if method not in ["ffill", "bfill"]:
+                raise ValueError("method must be one of {'ffill', 'bfill'}")
+            order_col = F.monotonically_increasing_id()
+            window = Window.orderBy(order_col)
+            if method == "ffill":
+                window = window.rowsBetween(Window.unboundedPreceding, 0)
+                return self.data.select(
+                    *[F.last(F.col(c), ignorenulls=True).over(window).alias(c) for c in self.data.columns]
+                )
+            window = window.rowsBetween(0, Window.unboundedFollowing)
+            return self.data.select(
+                *[F.first(F.col(c), ignorenulls=True).over(window).alias(c) for c in self.data.columns]
+            )
+
+        if values is None:
+            return self.data
+        if isinstance(values, dict):
+            return self.data.fillna(values)
+        return self.data.fillna(values)
 
     def na_counts(self) -> Union[spark.DataFrame, int]:
         na_counts = self.data.select(
@@ -1315,12 +1360,32 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
         subset: Optional[Union[str, Iterable[str]]] = None,
         axis: Union[Literal["index", "rows", "columns"], int] = 0,
     ) -> spark.DataFrame:
-        pass
+        subset = Adapter.to_list(subset) if subset is not None else None
+        if axis in [0, "index", "rows"]:
+            return self.data.dropna(how=how, subset=subset)
+        if axis in [1, "columns"]:
+            subset_cols = subset if subset is not None else self.data.columns
+            agg_expr = [F.count(F.when(F.col(c).isNull() | F.isnan(c), c)).alias(c) for c in subset_cols]
+            counts = self.data.agg(*agg_expr).collect()[0].asDict()
+            total = self.data.count()
+            if how == "all":
+                cols_to_drop = [c for c in subset_cols if counts[c] == total]
+            else:
+                cols_to_drop = [c for c in subset_cols if counts[c] > 0]
+            keep_cols = [c for c in self.data.columns if c not in cols_to_drop]
+            return self.data.select(*keep_cols)
+        raise ValueError("axis must be 0/'rows' or 1/'columns'")
 
     def transpose(
         self, names: Optional[Sequence[str]] = None
     ) -> spark.DataFrame:  # TODO: to be moved to small data
-        pass
+        pdf = self.data.toPandas().T
+        if names is not None:
+            pdf.columns = list(names)
+        else:
+            pdf.columns = [str(c) for c in pdf.columns]
+        pdf = pdf.reset_index(drop=True)
+        return self.session.createDataFrame(pdf)
 
     def sample(  # Эрик
         self,
@@ -1328,7 +1393,15 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
         n: int | None = None,
         random_state: int | None = None,
     ) -> spark.DataFrame:
-        pass
+        if frac is None and n is None:
+            raise ValueError("Either frac or n must be provided")
+        if frac is None and n is not None:
+            total = self.data.count()
+            frac = 0.0 if total == 0 else min(1.0, n / total)
+        result = self.data.sample(False, frac, random_state)
+        if n is not None:
+            return result.limit(n)
+        return result
 
     def select_dtypes(
         self,
@@ -1375,7 +1448,21 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
         suffixes: tuple[str, str] = ("_x", "_y"),
         how: Literal["left", "right", "inner", "outer", "cross"] = "inner",
     ) -> spark.DataFrame:
-        pass
+        right_df = right.data if isinstance(right, SparkDataset) else right
+        left_df = self.data
+
+        if on is not None:
+            return left_df.join(right_df, on=on, how=how)
+
+        if left_index or right_index:
+            left_df = left_df.withColumn("__idx", F.monotonically_increasing_id())
+            right_df = right_df.withColumn("__idx", F.monotonically_increasing_id())
+            result = left_df.join(right_df, on="__idx", how=how).drop("__idx")
+            return result
+
+        if left_on is None or right_on is None:
+            raise MergeOnError
+        return left_df.join(right_df, left_df[left_on] == right_df[right_on], how=how)
 
     def drop(self, labels: Any = "", axis: int = 1) -> spark.DataFrame:
         labels = Adapter.to_list(labels)
@@ -1416,7 +1503,10 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
             raise ValueError("Invalid axis value")
 
     def rename(self, columns: dict[str, str]) -> spark.DataFrame:  # Эрик
-        pass
+        result = self.data
+        for old, new in columns.items():
+            result = result.withColumnRenamed(old, new)
+        return result
 
     def replace(
         self, to_replace: Any = None, value: Any = None, regex: bool = False
@@ -1442,7 +1532,12 @@ class SparkDataset(SparkNavigation, DatasetBackendCalc):
     def reindex(
         self, labels: str = "", fill_value: Optional[str] = None
     ) -> spark.DataFrame:
-        pass
+        labels = Adapter.to_list(labels)
+        indexed = self.data.withColumn(
+            "__row_num", F.row_number().over(Window.orderBy(F.monotonically_increasing_id())) - 1
+        )
+        result = indexed.filter(F.col("__row_num").isin(labels)).drop("__row_num")
+        return result
 
     def list_to_columns(self, column: str) -> spark.DataFrame:
         n_cols = len(self.data.select(column).head(1).collect()[0][0])

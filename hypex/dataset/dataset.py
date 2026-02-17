@@ -28,6 +28,30 @@ from .roles import (
 
 
 class Dataset(DatasetBase):
+    class Locker:
+        def __init__(self, backend, roles):
+            self.backend = backend
+            self.roles = roles
+
+        def __getitem__(self, item):
+            t_data = self.backend.loc(item)
+            return Dataset(
+                data=t_data,
+                roles={k: v for k, v in self.roles.items() if k in t_data.columns},
+            )
+
+    class ILocker:
+        def __init__(self, backend, roles):
+            self.backend = backend
+            self.roles = roles
+
+        def __getitem__(self, item):
+            t_data = self.backend.iloc(item)
+            return Dataset(
+                data=t_data,
+                roles={k: v for k, v in self.roles.items() if k in t_data.columns},
+            )
+
     def __init__(
             self,
             roles: dict[ABCRole, list[str] | str] | dict[str, ABCRole],
@@ -37,6 +61,49 @@ class Dataset(DatasetBase):
             session: Optional[spark.SparkSession] = None,
     ):
         super().__init__(roles, data, backend, default_role, session)
+        self.loc = self.Locker(self._backend, self.roles)
+        self.iloc = self.ILocker(self._backend, self.roles)
+
+    def sort(
+            self,
+            by: MultiFieldKeyTypes | None = None,
+            ascending: bool = True,
+            **kwargs,
+    ):
+        if by is None:
+            return Dataset(
+                roles=self.roles,
+                data=self.backend.sort_index(ascending=ascending, **kwargs),
+            )
+        return Dataset(
+            roles=self.roles,
+            data=self.backend.sort_values(by=by, ascending=ascending, **kwargs),
+        )
+
+    def transpose(
+            self,
+            roles: dict[str, ABCRole] | list[str] | None = None,
+    ) -> "Dataset":
+        roles_names: list[str | None] = (
+            list(roles.keys()) or [] if isinstance(roles, dict) else roles
+        )
+        result_data = self.backend.transpose(roles_names)
+        if roles is None or isinstance(roles, list):
+            names = result_data.columns if roles is None else roles
+            roles = {column: DefaultRole() for column in names}
+        return Dataset(roles=roles, data=result_data)
+
+    @staticmethod
+    def from_dict(
+            data: FromDictTypes,
+            roles: ABCRole | dict[str, ABCRole],
+            index: Iterable | None = None,
+    ) -> "Dataset":
+        if not isinstance(roles, dict):
+            raise TypeError("roles must be dict[str, ABCRole]")
+        backend = Dataset.create_empty(roles=roles).backend
+        backend.from_dict(data=data, index=index)
+        return Dataset(roles=roles, data=backend.data)
 
     def to_small_dataset(self) -> SmallDataset:
         """Преобразует Dataset в SmallDataset"""
@@ -135,7 +202,7 @@ class SmallDataset(DatasetBase):
             roles: ABCRole | dict[str, ABCRole],
     ) -> SmallDataset:
         if isinstance(roles, dict):
-            return SmallDataset.__init__(data=data, roles=roles)
+            return SmallDataset(data={"data": data}, roles=roles)
         else:
             raise TypeError(f"Value {data} is not a dict type.")
 
@@ -255,13 +322,11 @@ class ExperimentData:
 
         # Handle analysis tables
         elif space == ExperimentDataEnum.analysis_tables:
-            # Преобразуем Dataset в SmallDataset
             if isinstance(value, Dataset):
                 value = value.to_small_dataset()
-            elif isinstance(value, Dataset):
+            elif isinstance(value, dict):
                 value = SmallDataset.from_dict(value.to_dict(), roles=role)
             elif not isinstance(value, SmallDataset):
-                # Если значение не Dataset/SmallDataset, создаем SmallDataset
                 raise TypeError(f"Wrong value {value} for converting to SmallDataset")
             self.analysis_tables[executor_id] = value
 

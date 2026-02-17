@@ -75,6 +75,36 @@ dimensionality, making the results unrepresentative.
 pip install -U hypex
 ```
 
+## Spark backend and compatibility
+
+HypEx includes an experimental `spark` backend that mirrors the pandas-oriented `Dataset` API for large-scale processing.
+
+### Recommended runtime matrix
+
+- Python: **3.8.17** (minimum supported baseline for production compatibility checks)
+- PySpark: **3.5.1**
+
+### Quick Spark session example
+
+```python
+from pyspark.sql import SparkSession
+from hypex.dataset import Dataset, FeatureRole
+
+spark = SparkSession.builder.master("local[*]").appName("hypex").getOrCreate()
+
+ds = Dataset(
+    roles={"value": FeatureRole(float)},
+    data="data.csv",
+    session=spark,
+)
+```
+
+### Notes
+
+- `analysis_tables` stores compact `SmallDataset` instances for downstream analyzers/reporters.
+- Spark backend methods prioritize native Spark operations where possible (sorting, filling nulls, joins, append).
+- For notebook tutorials, run all `.ipynb` end-to-end before committing to keep outputs reproducible.
+
 ## Quick start
 
 Explore usage examples and tutorials [here](https://github.com/sb-ai-lab/Hypex/blob/master/examples/tutorials/).

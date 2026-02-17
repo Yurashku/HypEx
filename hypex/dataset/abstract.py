@@ -10,6 +10,7 @@ from typing import Any, Iterable, Callable, Hashable, Literal, Optional, Sequenc
 import pandas as pd  # type: ignore
 from numpy import ndarray
 import pyspark.sql as spark
+from pyspark.sql import functions as F
 
 from ..utils import (
     BackendsEnum,
@@ -37,6 +38,8 @@ class DatasetBase(ABC):
     @staticmethod
     def _select_backend_from_data(data, session: spark.SparkSession = None):
         if isinstance(data, pd.DataFrame):
+            if session is not None:
+                return SparkDataset(data, session)
             return PandasDataset(data)
         elif isinstance(data, spark.DataFrame):
             return SparkDataset(data, session)
@@ -96,7 +99,8 @@ class DatasetBase(ABC):
         else:
             if session is not None:
                 self._backend = SparkDataset(data, session)
-            self._backend = PandasDataset(data)
+            else:
+                self._backend = PandasDataset(data)
 
         self.default_role = default_role
         if roles is None and data.hasattr("roles") and data.roles is not None:
@@ -402,6 +406,16 @@ class DatasetBase(ABC):
     @property
     def index(self):
         return self._backend.index
+
+    @index.setter
+    def index(self, value):
+        if hasattr(self._backend, "data") and hasattr(self._backend.data, "index"):
+            self._backend.data.index = value
+        elif "_index" in self._backend.columns:
+            tmp = self._backend.data.withColumn("__new_index", F.monotonically_increasing_id())
+            self._backend.data = tmp.drop("_index").withColumnRenamed("__new_index", "_index")
+        else:
+            raise AttributeError("Index cannot be set for this backend")
 
     @property
     def data(self):
