@@ -1,3 +1,17 @@
+# HypEx — my contribution fork
+
+This is [Yurashku's fork](https://github.com/Yurashku/HypEx) of [sb-ai-lab/HypEx](https://github.com/sb-ai-lab/HypEx), a shared library for causal inference and experiment analysis.
+
+## My contributions
+
+- **Legacy matching (0.1.x):** [feature-selection methods](https://github.com/sb-ai-lab/HypEx/commit/6f905f0a4518c42699f354de03ed6cff7590f713) and [synthetic causal dataset generators](https://github.com/sb-ai-lab/HypEx/commit/e255bd57defe127cbce46ba9bf366eaafc6b186f).
+- **Spark backend development:** dataset operations and tests in [#198](https://github.com/sb-ai-lab/HypEx/pull/198), [#203](https://github.com/sb-ai-lab/HypEx/pull/203) and [#205](https://github.com/sb-ai-lab/HypEx/pull/205), merged into development branches in 2026.
+- **Code review:** [CUPED/CUPAC discussion](https://github.com/sb-ai-lab/HypEx/pull/229#pullrequestreview-4226424003), including cross-validation questions.
+
+The upstream README is preserved below as part of this fork's historical snapshot. Its release badges describe that snapshot. For current releases, API and installation guidance, see the [upstream README](https://github.com/sb-ai-lab/HypEx#readme).
+
+---
+
 # HypEx: Advanced Causal Inference and AB Testing Toolkit
 
 ![Last release](https://img.shields.io/badge/pypi-v1.0.5-darkgreen)
